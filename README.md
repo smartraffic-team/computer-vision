@@ -1,6 +1,6 @@
 # SmartTraffic - Visão Computacional
 
-Sistema de detecção de veículos, pedestres e PCDs usando *YOLOv8*, com streaming web via *Flask* e comunicação serial com *Arduino*.
+Sistema de detecção de veículos, pedestres e PCDs usando **YOLOv8**, com streaming web via **Flask** e comunicação serial com **Arduino**.
 
 ---
 
@@ -21,7 +21,7 @@ computer-vision/
 
 ### Configurações importantes
 
-No arquivo **Smartrafic_web.py**:
+No arquivo `Smartrafic_web.py`:
 ```python
 
 # Câmera (troque o índice se necessário)
@@ -40,11 +40,9 @@ pip install flask opencv-python ultralytics pyserial
 ### 2.Testar
 
 ```bash
-python Teste_camera.py
+python Smartrafic_web.py
 ```
 
-Isso abre uma janela com o feed da câmera. Pressione **ESC** para sair.
-
-## 4.Acessar a interface
+## 3.Acessar a interface
 
 Abra o navegador em: http://localhost:5000
