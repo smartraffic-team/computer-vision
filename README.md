@@ -1,42 +1,50 @@
-# SmarTraffic - Visão Computacional
+# SmartTraffic - Visão Computacional
 
-Projeto de visão computacional para detecção de objetos utilizando OpenCV e YOLO.  
-Inclui módulos para detecção geral de objetos, contagem de veículos e reconhecimento facial.
+Sistema de detecção de veículos, pedestres e PCDs usando *YOLOv8*, com streaming web via *Flask* e comunicação serial com *Arduino*.
 
-## Requisitos
+---
 
-Instale as dependências necessárias:
-
-```bash
-pip install opencv-python ultralytics
+## Estrutura Atual
+```
+computer-vision/
+├── Smartrafic_web.py # Script principal (Flask + YOLO + Serial)
+├── Teste_camera.py # Teste rápido da câmera
+├── yolov8n.pt # Modelo YOLO treinado
+├── templates/ # Templates HTML da interface web
+├── LICENSE # Licença do projeto
+└── README.md # Este arquivo
 ```
 
-## Configuração
-1. Acesse a pasta do projeto:
+---
 
-```bash
-cd Detector-VSC
-```
+## Como rodar
 
-2. Configure a fonte de captura de vídeo:
-- No código, localize a linha:
-```bash
+### Configurações importantes
+
+No arquivo **Smartrafic_web.py**:
+```python
+
+# Câmera (troque o índice se necessário)
 cap = cv2.VideoCapture(0)
+
+# Porta serial do Arduino
+ser = serial.Serial('COM3', 9600)      # Windows
+# ser = serial.Serial('/dev/ttyUSB0', 9600)  # Linux/Mac
 ```
-- Para webcam, mantenha o valor ```0```.
-- Para câmera externa ou IP, altere para ```1``` ou conforme o índice do dispositivo.
 
-## Execução
-Os scripts disponíveis e suas respectivas funções:
+### 1.Instalar dependências
 
-| Arquivo | Descrição | 
-|----------|----------|
-| Contador_carros.py  | Detecção filtrada para veículos e pessoas | 
-| VSC-meio.py  | Execução do YOLO em sua configuração padrão. |
-| Objetos.py | Detecção de todos os objetos suportados pelo modelo. |
-| main.py | Reconhecimento facial. |
-
-Exemplo de execução:
 ```bash
-python Contador_carros.py
+pip install flask opencv-python ultralytics pyserial
 ```
+### 2.Testar
+
+```bash
+python Teste_camera.py
+```
+
+Isso abre uma janela com o feed da câmera. Pressione **ESC** para sair.
+
+## 4.Acessar a interface
+
+Abra o navegador em: http://localhost:5000
