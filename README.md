@@ -1,4 +1,4 @@
-# SmartTraffic - Visão Computacional
+# SmarTraffic - Visão Computacional
 
 Sistema de detecção de veículos, pedestres e PCDs usando **YOLOv8**, com streaming web via **Flask** e comunicação serial com **Arduino**.
 
