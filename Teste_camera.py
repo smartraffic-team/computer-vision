@@ -1,57 +1,192 @@
-from flask import Flask, render_template, Response
-import cv2
+import logging
 import time
-import numpy as np
+import threading
+import serial
+import cv2
+from flask import Flask, render_template, Response
+from flask_socketio import SocketIO, emit
+from ultralytics import YOLO
+
+LOG_FORMAT = '%(asctime)s [%(levelname)s] %(message)s'
+logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
+
+PORTA_ARDUINO = '/dev/ttyUSB0'
+LIMIAR_TROCA_B = 3
+LIMIAR_VOLTA_A = 1
+CAMERA_INDEX = 1
+FRAME_WIDTH = 640
+FRAME_HEIGHT = 480
+FRAME_RATE = 30
+DETECTION_FRAME_SKIP = 3
+JPEG_QUALITY = 80
+MODEL_PATH = 'yolov8n.pt'
 
 app = Flask(__name__)
+app.config['SECRET_KEY'] = 'sua_chave_secreta_aqui'
+socketio = SocketIO(app, cors_allowed_origins='*')
 
-def iniciar_camera():
-    """Tenta diferentes métodos para Windows"""
-    
-    # Método 1: DirectShow (recomendado para Windows)
-    print("Tentando DirectShow...")
-    for i in range(3):
-        cap = cv2.VideoCapture(i, cv2.CAP_DSHOW)
-        if cap.isOpened():
-            # Testa se realmente consegue ler um frame
-            ret, frame = cap.read()
-            if ret and frame is not None:
-                print(f"✅ Câmera {i} funcionando com DirectShow!")
-                return cap
-            else:
-                cap.release()
-    
-    # Método 2: Método padrão
-    print("Tentando método padrão...")
-    for i in range(3):
-        cap = cv2.VideoCapture(i)
-        if cap.isOpened():
-            ret, frame = cap.read()
-            if ret and frame is not None:
-                print(f"✅ Câmera {i} funcionando com método padrão!")
-                return cap
-            else:
-                cap.release()
-    
-    return None
+class TrafficController:
+    def __init__(self):
+        self.current_light = 'A'
+        self.manual_mode = False
+        self.manual_light = 'A'
+        self.car_count = 0
+        self.pedestrian_count = 0
+        self.frame = None
+        self.cap = None
+        self.arduino = None
+        self.model = None
+        self.running = threading.Event()
+        self.frame_counter = 0
 
-# Inicializa a câmera
-cap = iniciar_camera()
+    def connect_arduino(self) -> bool:
+        try:
+            self.arduino = serial.Serial(PORTA_ARDUINO, 9600, timeout=1)
+            time.sleep(2)
+            logging.info('Arduino conectado na porta %s', PORTA_ARDUINO)
+            return True
+        except Exception as error:
+            logging.warning('Erro ao conectar Arduino: %s', error)
+            self.arduino = None
+            return False
 
-# Configurações da câmera se foi encontrada
-if cap is not None:
-    # Ajusta resolução para melhor performance
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-    cap.set(cv2.CAP_PROP_FPS, 30)
-    print("✅ Sistema pronto! Acesse http://localhost:5000")
-else:
-    print("❌ Nenhuma câmera encontrada!")
-    print("\nSoluções:")
-    print("1. Verifique se a câmera está conectada")
-    print("2. Feche programas que usam a câmera (Zoom, Teams, Chrome)")
-    print("3. Execute como administrador")
-    print("4. Verifique as permissões de privacidade da câmera no Windows")
+    def initialize_camera(self) -> bool:
+        self.cap = cv2.VideoCapture(CAMERA_INDEX)
+        if not self.cap.isOpened():
+            logging.warning('Câmera não inicializada no índice %s', CAMERA_INDEX)
+            return False
+
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
+        self.cap.set(cv2.CAP_PROP_FPS, FRAME_RATE)
+        logging.info('Câmera inicializada com sucesso')
+        return True
+
+    def load_model(self) -> bool:
+        try:
+            self.model = YOLO(MODEL_PATH)
+            logging.info('Modelo carregado: %s', MODEL_PATH)
+            return True
+        except Exception as error:
+            logging.error('Falha ao carregar o modelo YOLO: %s', error)
+            self.model = None
+            return False
+
+    def send_command(self, command: str) -> bool:
+        if not self.arduino or not self.arduino.is_open:
+            return False
+
+        try:
+            self.arduino.write(command.encode())
+            logging.info('Comando enviado ao Arduino: %s', command)
+            return True
+        except Exception as error:
+            logging.warning('Erro ao enviar comando: %s', error)
+            return False
+
+    def detect_objects(self, frame):
+        if self.model is None:
+            return 0, 0
+
+        frame_resized = cv2.resize(frame, (FRAME_WIDTH, FRAME_HEIGHT))
+        results = self.model(frame_resized, verbose=False)
+
+        cars = 0
+        pedestrians = 0
+        for result in results:
+            for box in result.boxes:
+                label = self.model.names[int(box.cls[0])]
+                if label == 'car':
+                    cars += 1
+                elif label == 'person':
+                    pedestrians += 1
+
+        return cars, pedestrians
+
+    def update_traffic_state(self, cars, pedestrians):
+        self.car_count = cars
+        self.pedestrian_count = pedestrians
+
+        if self.manual_mode:
+            if self.manual_light != self.current_light:
+                self.current_light = self.manual_light
+                self.send_command(self.current_light)
+        else:
+            if self.current_light == 'A' and cars >= LIMIAR_TROCA_B:
+                self.current_light = 'B'
+                self.send_command('B')
+            elif self.current_light == 'B' and cars <= LIMIAR_VOLTA_A:
+                self.current_light = 'A'
+                self.send_command('A')
+
+        socketio.emit('status_update', self.status_payload())
+        socketio.emit('contadores_update', {
+            'carros': self.car_count,
+            'pedestres': self.pedestrian_count
+        })
+
+    def status_payload(self):
+        return {
+            'semaforo': self.current_light,
+            'carros': self.car_count,
+            'pedestres': self.pedestrian_count,
+            'modo': 'manual' if self.manual_mode else 'auto'
+        }
+
+    def detection_loop(self):
+        if not self.load_model():
+            logging.error('Detecção desativada: modelo não carregado')
+            return
+
+        self.running.set()
+        while self.running.is_set():
+            if self.cap is None or not self.cap.isOpened():
+                time.sleep(0.1)
+                continue
+
+            success, frame = self.cap.read()
+            if not success or frame is None:
+                time.sleep(0.1)
+                continue
+
+            self.frame = frame.copy()
+            self.frame_counter += 1
+
+            if self.frame_counter % DETECTION_FRAME_SKIP == 0:
+                try:
+                    cars, pedestrians = self.detect_objects(frame)
+                    self.update_traffic_state(cars, pedestrians)
+                except Exception as error:
+                    logging.warning('Erro na detecção: %s', error)
+
+            time.sleep(1 / FRAME_RATE)
+
+        logging.info('Loop de detecção encerrado')
+
+    def generate_stream(self):
+        while self.running.is_set():
+            if self.frame is None:
+                time.sleep(1 / FRAME_RATE)
+                continue
+
+            frame_display = self.frame.copy()
+            success, buffer = cv2.imencode('.jpg', frame_display, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
+            if success:
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n\r\n')
+
+            time.sleep(1 / FRAME_RATE)
+
+    def activate_manual(self):
+        self.manual_mode = True
+        self.manual_light = 'B' if self.manual_light == 'A' else 'A'
+        self.current_light = self.manual_light
+        self.send_command(self.current_light)
+
+    def activate_auto(self):
+        self.manual_mode = False
+
+controller = TrafficController()
 
 @app.route('/')
 def index():
@@ -59,54 +194,34 @@ def index():
 
 @app.route('/video_feed')
 def video_feed():
-    def generate():
-        global cap
-        
-        # Se não tem câmera, mostra mensagem de erro
-        if cap is None:
-            while True:
-                # Cria frame preto com mensagem
-                frame = np.zeros((480, 640, 3), dtype=np.uint8)
-                cv2.putText(frame, "Camera nao encontrada", (150, 200), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-                cv2.putText(frame, "Verifique a conexao da camera", (120, 250), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-                cv2.putText(frame, "Feche outros programas que usam a camera", (80, 300), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-                
-                ret, buffer = cv2.imencode('.jpg', frame)
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n\r\n')
-                time.sleep(0.1)
-        
-        # Se tem câmera, faz streaming
-        while True:
-            if cap is None or not cap.isOpened():
-                break
-                
-            success, frame = cap.read()
-            if not success or frame is None:
-                print("Erro ao ler frame, tentando reiniciar...")
-                time.sleep(0.1)
-                continue
-            
-            # Redimensiona para tamanho menor (opcional)
-            # frame = cv2.resize(frame, (640, 480))
-            
-            ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-            frame_bytes = buffer.tobytes()
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n\r\n')
-            time.sleep(0.03)  # ~30 fps
-    
-    return Response(generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
+    return Response(controller.generate_stream(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+@socketio.on('connect')
+def handle_connect():
+    logging.info('Cliente conectado')
+    emit('status_inicial', controller.status_payload())
+
+@socketio.on('alternar_semaforo')
+def handle_alternar():
+    controller.activate_manual()
+    logging.info('Modo manual ativado: %s', controller.current_light)
+    emit('status_update', controller.status_payload(), broadcast=True)
+
+@socketio.on('ativar_auto')
+def handle_ativar_auto():
+    controller.activate_auto()
+    logging.info('Modo automático ativado')
+    emit('status_update', controller.status_payload(), broadcast=True)
 
 if __name__ == '__main__':
-    print("\n" + "="*50)
-    print("🚦 SEMÁFORO INTELIGENTE")
-    print("="*50)
-    print("\n🌐 Acesse no navegador: http://localhost:5000")
-    print("🛑 Pressione Ctrl+C para parar\n")
-    
-    # Executa com debug=True para ver erros
-    app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
+    logging.info('Iniciando semáforo inteligente')
+    controller.connect_arduino()
+
+    if not controller.initialize_camera():
+        logging.warning('Câmera não encontrada, executando em modo simulação')
+
+    thread_deteccao = threading.Thread(target=controller.detection_loop, daemon=True)
+    thread_deteccao.start()
+
+    logging.info('Servidor web iniciado em: http://localhost:5000')
+    socketio.run(app, host='0.0.0.0', port=5000, debug=False, allow_unsafe_werkzeug=True)

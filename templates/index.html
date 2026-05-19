@@ -2,49 +2,515 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Semáforo Inteligente</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        * {
             margin: 0;
-            padding: 20px;
-            min-height: 100vh;
+            padding: 0;
+            box-sizing: border-box;
         }
-        
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1C1C1E;
+            color: #E2E5DE;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Container principal - layout dividido */
+        .dashboard {
+            display: flex;
+            height: 100vh;
+            width: 100%;
+        }
+
+        /* Lado esquerdo - Camera (50% da tela) */
+        .camera-section {
+            flex: 1;
+            background-color: #000000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-right: 3px solid #FECD0A;
+            overflow: hidden;
+        }
+
+        .video-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #000000;
+        }
+
+        .video-container img {
+            max-width: 100%;
+            max-height: 100%;
+            width: auto;
+            height: auto;
+            object-fit: contain;  /* Mudei de 'cover' para 'contain' */
+        }
+
+        /* Lado direito - Painel de Controle (50% da tela) */
+        .control-panel {
+            flex: 1;
+            background-color: #1C1C1E;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding: 40px;
+            gap: 25px;
+            overflow-y: auto;
+        }
+
+        /* Título */
+        .title {
+            text-align: center;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #FECD0A;
+        }
+
+        .title h1 {
+            font-size: 26px;
+            font-weight: 600;
+            letter-spacing: 2px;
+        }
+
+        .title p {
+            font-size: 12px;
+            color: #a0a3a0;
+            margin-top: 6px;
+        }
+
+        /* Cards de contadores */
+        .counters {
+            display: flex;
+            gap: 20px;
+            justify-content: space-between;
+        }
+
+        .counter-card {
+            flex: 1;
+            background-color: #2c2c2e;
+            border-radius: 12px;
+            padding: 20px 15px;
+            text-align: center;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .counter-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .counter-label {
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: #FECD0A;
+            margin-bottom: 12px;
+            font-weight: 600;
+        }
+
+        .counter-value {
+            font-size: 48px;
+            font-weight: bold;
+            color: #E2E5DE;
+        }
+
+        /* Card do semáforo */
+        .semaforo-card {
+            background-color: #2c2c2e;
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .section-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: #FECD0A;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
             text-align: center;
         }
-        
-        h1 {
-            color: white;
-            margin-bottom: 30px;
-            font-size: 2em;
+
+        .status-semaforo {
+            display: flex;
+            justify-content: space-around;
+            gap: 15px;
         }
-        
-        .video-box {
-            background: #000;
+
+        .via-status {
+            flex: 1;
+            text-align: center;
+            padding: 15px;
             border-radius: 10px;
-            overflow: hidden;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            background-color: #1C1C1E;
+            transition: all 0.3s ease;
         }
-        
-        .video-box img {
-            width: 100%;
-            height: auto;
-            display: block;
+
+        .via-status.ativo {
+            background-color: #2c2c2e;
+            border: 2px solid #FECD0A;
+            box-shadow: 0 0 10px rgba(254, 205, 10, 0.2);
+        }
+
+        .via-label {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 12px;
+        }
+
+        .luz {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            margin: 0 auto 8px;
+            transition: all 0.2s ease;
+        }
+
+        .luz-vermelha {
+            background-color: #3a0000;
+            border: 2px solid #550000;
+        }
+
+        .luz-vermelha.acesa {
+            background-color: #ff0000;
+            box-shadow: 0 0 20px #ff0000;
+            border-color: #ff4444;
+        }
+
+        .luz-verde {
+            background-color: #003300;
+            border: 2px solid #005500;
+        }
+
+        .luz-verde.acesa {
+            background-color: #00ff00;
+            box-shadow: 0 0 20px #00ff00;
+            border-color: #44ff44;
+        }
+
+        .status-texto {
+            font-size: 13px;
+            margin-top: 8px;
+            color: #a0a3a0;
+            font-weight: 600;
+        }
+
+        .via-status.ativo .status-texto {
+            color: #FECD0A;
+        }
+
+        /* Botões */
+        .botoes {
+            display: flex;
+            gap: 12px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 12px 15px;
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .btn-primary {
+            background-color: #FECD0A;
+            color: #1C1C1E;
+        }
+
+        .btn-primary:hover {
+            background-color: #e0b800;
+            transform: scale(1.02);
+        }
+
+        .btn-primary:active {
+            transform: scale(0.98);
+        }
+
+        .btn-secondary {
+            background-color: #2c2c2e;
+            color: #E2E5DE;
+            border: 1px solid #FECD0A;
+        }
+
+        .btn-secondary:hover {
+            background-color: #3c3c3e;
+            transform: scale(1.02);
+        }
+
+        /* Modo atual */
+        .modo-atual {
+            text-align: center;
+            padding: 10px;
+            background-color: #2c2c2e;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        .modo-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-weight: bold;
+            margin-left: 8px;
+        }
+
+        .modo-auto {
+            background-color: #003300;
+            color: #00ff00;
+        }
+
+        .modo-manual {
+            background-color: #3a0000;
+            color: #ff4444;
+        }
+
+        /* Scrollbar customizada (caso precise, mas não vai precisar) */
+        .control-panel::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .control-panel::-webkit-scrollbar-track {
+            background: #1C1C1E;
+        }
+
+        .control-panel::-webkit-scrollbar-thumb {
+            background: #FECD0A;
+            border-radius: 3px;
+        }
+
+        /* Responsividade */
+        @media (max-width: 900px) {
+            .control-panel {
+                padding: 25px;
+                gap: 20px;
+            }
+            
+            .counter-value {
+                font-size: 36px;
+            }
+            
+            .luz {
+                width: 45px;
+                height: 45px;
+            }
+            
+            .via-label {
+                font-size: 16px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .dashboard {
+                flex-direction: column;
+            }
+            
+            .camera-section {
+                flex: 1;
+                min-height: 40vh;
+                border-right: none;
+                border-bottom: 3px solid #FECD0A;
+            }
+            
+            .control-panel {
+                flex: 1;
+                padding: 20px;
+                gap: 15px;
+            }
+            
+            .counter-value {
+                font-size: 32px;
+            }
+            
+            .luz {
+                width: 40px;
+                height: 40px;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>🚦 Semáforo Inteligente</h1>
-        <div class="video-box">
-            <img src="{{ url_for('video_feed') }}" alt="Video Feed">
+    <div class="dashboard">
+        <!-- Lado esquerdo: Camera (50% da tela, imagem inteira sem cortes) -->
+        <div class="camera-section">
+            <div class="video-container">
+                <img id="videoFeed" src="{{ url_for('video_feed') }}" alt="Feed da camera">
+            </div>
+        </div>
+
+        <!-- Lado direito: Painel de Controle (50% da tela) -->
+        <div class="control-panel">
+            <div class="title">
+                <h1>SEMAFORO INTELIGENTE</h1>
+                <p>Sistema de controle automatizado</p>
+            </div>
+
+            <!-- Contadores -->
+            <div class="counters">
+                <div class="counter-card">
+                    <div class="counter-label">CARROS</div>
+                    <div class="counter-value" id="contadorCarros">0</div>
+                </div>
+                <div class="counter-card">
+                    <div class="counter-label">PEDESTRES</div>
+                    <div class="counter-value" id="contadorPedestres">0</div>
+                </div>
+            </div>
+
+            <!-- Status do Semaforo -->
+            <div class="semaforo-card">
+                <div class="section-title">ESTADO DO SEMAFORO</div>
+                <div class="status-semaforo">
+                    <div class="via-status" id="viaAStatus">
+                        <div class="via-label">VIA A</div>
+                        <div class="luz luz-verde" id="luzAVerde"></div>
+                        <div class="luz luz-vermelha" id="luzAVermelha"></div>
+                        <div class="status-texto" id="viaATexto">FECHADO</div>
+                    </div>
+                    <div class="via-status" id="viaBStatus">
+                        <div class="via-label">VIA B</div>
+                        <div class="luz luz-verde" id="luzBVerde"></div>
+                        <div class="luz luz-vermelha" id="luzBVermelha"></div>
+                        <div class="status-texto" id="viaBTexto">FECHADO</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Botoes de Controle -->
+            <div class="botoes">
+                <button class="btn btn-primary" id="btnAlternar">
+                    ALTERNAR SEMAFORO
+                </button>
+                <button class="btn btn-secondary" id="btnAuto">
+                    MODO AUTOMATICO
+                </button>
+            </div>
+
+            <!-- Indicador de Modo -->
+            <div class="modo-atual">
+                MODO ATUAL:
+                <span class="modo-badge" id="modoBadge">AUTOMATICO</span>
+            </div>
         </div>
     </div>
+
+    <script>
+        // Conectar ao Socket.IO
+        const socket = io();
+
+        // Elementos DOM
+        const contadorCarrosEl = document.getElementById('contadorCarros');
+        const contadorPedestresEl = document.getElementById('contadorPedestres');
+        const btnAlternar = document.getElementById('btnAlternar');
+        const btnAuto = document.getElementById('btnAuto');
+        const modoBadge = document.getElementById('modoBadge');
+        
+        // Elementos do semaforo via A
+        const viaAStatus = document.getElementById('viaAStatus');
+        const luzAVerde = document.getElementById('luzAVerde');
+        const luzAVermelha = document.getElementById('luzAVermelha');
+        const viaATexto = document.getElementById('viaATexto');
+        
+        // Elementos do semaforo via B
+        const viaBStatus = document.getElementById('viaBStatus');
+        const luzBVerde = document.getElementById('luzBVerde');
+        const luzBVermelha = document.getElementById('luzBVermelha');
+        const viaBTexto = document.getElementById('viaBTexto');
+
+        // Funcao para atualizar o semaforo na interface
+        function atualizarSemaforo(via) {
+            if (via === 'A') {
+                // Via A verde, via B vermelho
+                luzAVerde.classList.add('acesa');
+                luzAVermelha.classList.remove('acesa');
+                viaATexto.textContent = 'LIBERADO';
+                viaAStatus.classList.add('ativo');
+                
+                luzBVerde.classList.remove('acesa');
+                luzBVermelha.classList.add('acesa');
+                viaBTexto.textContent = 'FECHADO';
+                viaBStatus.classList.remove('ativo');
+            } else if (via === 'B') {
+                // Via B verde, via A vermelho
+                luzAVerde.classList.remove('acesa');
+                luzAVermelha.classList.add('acesa');
+                viaATexto.textContent = 'FECHADO';
+                viaAStatus.classList.remove('ativo');
+                
+                luzBVerde.classList.add('acesa');
+                luzBVermelha.classList.remove('acesa');
+                viaBTexto.textContent = 'LIBERADO';
+                viaBStatus.classList.add('ativo');
+            }
+        }
+
+        // Funcao para atualizar contadores
+        function atualizarContadores(carros, pedestres) {
+            contadorCarrosEl.textContent = carros;
+            contadorPedestresEl.textContent = pedestres;
+        }
+
+        // Funcao para atualizar o modo
+        function atualizarModo(modo) {
+            if (modo === 'auto') {
+                modoBadge.textContent = 'AUTOMATICO';
+                modoBadge.className = 'modo-badge modo-auto';
+                btnAlternar.disabled = false;
+            } else if (modo === 'manual') {
+                modoBadge.textContent = 'MANUAL';
+                modoBadge.className = 'modo-badge modo-manual';
+                btnAlternar.disabled = false;
+            }
+        }
+
+        // Socket events
+        socket.on('connect', function() {
+            console.log('Conectado ao servidor');
+        });
+
+        socket.on('status_inicial', function(data) {
+            atualizarSemaforo(data.semaforo);
+            atualizarContadores(data.carros, data.pedestres);
+            atualizarModo(data.modo);
+        });
+
+        socket.on('status_update', function(data) {
+            atualizarSemaforo(data.semaforo);
+            atualizarContadores(data.carros, data.pedestres);
+            atualizarModo(data.modo);
+        });
+
+        socket.on('contadores_update', function(data) {
+            contadorCarrosEl.textContent = data.carros;
+            contadorPedestresEl.textContent = data.pedestres;
+        });
+
+        // Botoes events
+        btnAlternar.addEventListener('click', function() {
+            socket.emit('alternar_semaforo');
+        });
+
+        btnAuto.addEventListener('click', function() {
+            socket.emit('ativar_auto');
+        });
+
+        // Inicializar estado padrao
+        luzAVermelha.classList.add('acesa');
+        luzBVerde.classList.add('acesa');
+    </script>
 </body>
 </html>
