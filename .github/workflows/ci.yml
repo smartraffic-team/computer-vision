@@ -1,4 +1,4 @@
-name: CI - Computer Vision
+name: CI 
 
 on: [push, pull_request]
 
