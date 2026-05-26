@@ -10,7 +10,7 @@ from ultralytics import YOLO
 LOG_FORMAT = '%(asctime)s [%(levelname)s] %(message)s'
 logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 
-PORTA_ARDUINO = '/dev/ttyUSB0'
+PORTA_ARDUINO = '/dev/ttyUSB0'  # No Windows pode ser 'COM3', 'COM4', etc.
 LIMIAR_TROCA_B = 3
 LIMIAR_VOLTA_A = 1
 CAMERA_INDEX = 1
@@ -39,6 +39,7 @@ class TrafficController:
         self.model = None
         self.running = threading.Event()
         self.frame_counter = 0
+        self.yellow_blink = False
 
     def connect_arduino(self) -> bool:
         try:
@@ -80,6 +81,10 @@ class TrafficController:
         try:
             self.arduino.write(command.encode())
             logging.info('Comando enviado ao Arduino: %s', command)
+            time.sleep(0.1)
+            while self.arduino.in_waiting:
+                response = self.arduino.readline().decode().strip()
+                logging.info('Resposta Arduino: %s', response)
             return True
         except Exception as error:
             logging.warning('Erro ao enviar comando: %s', error)
@@ -111,15 +116,19 @@ class TrafficController:
         if self.manual_mode:
             if self.manual_light != self.current_light:
                 self.current_light = self.manual_light
+                self.yellow_blink = False
                 self.send_command(self.current_light)
         else:
             if self.current_light == 'A' and cars >= LIMIAR_TROCA_B:
                 self.current_light = 'B'
+                self.yellow_blink = False
                 self.send_command('B')
             elif self.current_light == 'B' and cars <= LIMIAR_VOLTA_A:
                 self.current_light = 'A'
+                self.yellow_blink = False
                 self.send_command('A')
 
+        # Emitir atualizações para todos os clientes
         socketio.emit('status_update', self.status_payload())
         socketio.emit('contadores_update', {
             'carros': self.car_count,
@@ -131,7 +140,8 @@ class TrafficController:
             'semaforo': self.current_light,
             'carros': self.car_count,
             'pedestres': self.pedestrian_count,
-            'modo': 'manual' if self.manual_mode else 'auto'
+            'modo': 'manual' if self.manual_mode else 'auto',
+            'amarelo': self.yellow_blink
         }
 
     def detection_loop(self):
@@ -180,12 +190,25 @@ class TrafficController:
 
     def activate_manual(self):
         self.manual_mode = True
-        self.manual_light = 'B' if self.manual_light == 'A' else 'A'
-        self.current_light = self.manual_light
-        self.send_command(self.current_light)
+        logging.info('Modo manual ativado - aguardando seleção de via')
+        socketio.emit('status_update', self.status_payload())
+
+    def set_manual_light(self, via):
+        if self.manual_mode:
+            if via in ['A', 'B']:
+                self.manual_light = via
+                self.current_light = via
+                self.yellow_blink = False
+                self.send_command(via)
+                logging.info('Modo manual - alterado para via %s', via)
+                socketio.emit('status_update', self.status_payload())
 
     def activate_auto(self):
         self.manual_mode = False
+        self.yellow_blink = False
+        logging.info('Modo automático ativado')
+        self.send_command(self.current_light)
+        socketio.emit('status_update', self.status_payload())
 
 
 controller = TrafficController()
@@ -207,22 +230,36 @@ def handle_connect():
     emit('status_inicial', controller.status_payload())
 
 
-@socketio.on('alternar_semaforo')
-def handle_alternar():
+@socketio.on('ativar_manual')
+def handle_ativar_manual():
     controller.activate_manual()
-    logging.info('Modo manual ativado: %s', controller.current_light)
-    emit('status_update', controller.status_payload(), broadcast=True)
 
 
 @socketio.on('ativar_auto')
 def handle_ativar_auto():
     controller.activate_auto()
-    logging.info('Modo automático ativado')
-    emit('status_update', controller.status_payload(), broadcast=True)
 
-    
+
+@socketio.on('alternar_semaforo_manual')
+def handle_alternar_manual(data):
+    if controller.manual_mode:
+        via = data.get('via')
+        controller.set_manual_light(via)
+
+
 if __name__ == '__main__':
     logging.info('Iniciando semáforo inteligente')
+    
+    # No Windows, a porta serial geralmente é COMx
+    # Se estiver no Linux/Mac, mantenha '/dev/ttyUSB0'
+    # Descomente a linha apropriada:
+    
+    # Para Windows:
+    # PORTA_ARDUINO = 'COM3'  # ou COM4, COM5, etc.
+    
+    # Para Linux/Mac:
+    # PORTA_ARDUINO = '/dev/ttyUSB0'
+    
     controller.connect_arduino()
 
     if not controller.initialize_camera():
@@ -232,4 +269,4 @@ if __name__ == '__main__':
     thread_deteccao.start()
 
     logging.info('Servidor web iniciado em: http://localhost:5000')
-    socketio.run(app, host='0.0.0.0', port=5000, debug=False, allow_unsafe_werkzeug=True)
+    socketio.run(app, host='0.0.0.0', port=5000, debug=False)

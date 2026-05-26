@@ -52,7 +52,7 @@
             max-height: 100%;
             width: auto;
             height: auto;
-            object-fit: contain;  /* Mudei de 'cover' para 'contain' */
+            object-fit: contain;
         }
 
         /* Lado direito - Painel de Controle (50% da tela) */
@@ -65,25 +65,6 @@
             padding: 40px;
             gap: 25px;
             overflow-y: auto;
-        }
-
-        /* Título */
-        .title {
-            text-align: center;
-            padding-bottom: 15px;
-            border-bottom: 2px solid #FECD0A;
-        }
-
-        .title h1 {
-            font-size: 26px;
-            font-weight: 600;
-            letter-spacing: 2px;
-        }
-
-        .title p {
-            font-size: 12px;
-            color: #a0a3a0;
-            margin-top: 6px;
         }
 
         /* Cards de contadores */
@@ -152,12 +133,22 @@
             border-radius: 10px;
             background-color: #1C1C1E;
             transition: all 0.3s ease;
+            cursor: pointer;
         }
 
         .via-status.ativo {
             background-color: #2c2c2e;
             border: 2px solid #FECD0A;
             box-shadow: 0 0 10px rgba(254, 205, 10, 0.2);
+        }
+
+        .via-status.clickable {
+            cursor: pointer;
+        }
+
+        .via-status.clickable:hover {
+            transform: scale(1.02);
+            background-color: #3c3c3e;
         }
 
         .via-label {
@@ -185,6 +176,17 @@
             border-color: #ff4444;
         }
 
+        .luz-amarela {
+            background-color: #3a3000;
+            border: 2px solid #554400;
+        }
+
+        .luz-amarela.acesa {
+            background-color: #ffcc00;
+            box-shadow: 0 0 20px #ffcc00;
+            border-color: #ffdd44;
+        }
+
         .luz-verde {
             background-color: #003300;
             border: 2px solid #005500;
@@ -207,16 +209,16 @@
             color: #FECD0A;
         }
 
-        /* Botões */
-        .botoes {
+        /* Botões de modo */
+        .modos-container {
             display: flex;
             gap: 12px;
         }
 
-        .btn {
+        .btn-modo {
             flex: 1;
             padding: 12px 15px;
-            border: none;
+            border: 2px solid #FECD0A;
             border-radius: 8px;
             font-size: 13px;
             font-weight: 600;
@@ -224,62 +226,25 @@
             transition: all 0.2s ease;
             text-transform: uppercase;
             letter-spacing: 1px;
+            background-color: #2c2c2e;
+            color: #E2E5DE;
         }
 
-        .btn-primary {
+        .btn-modo.ativo {
             background-color: #FECD0A;
             color: #1C1C1E;
+            border-color: #FECD0A;
         }
 
-        .btn-primary:hover {
-            background-color: #e0b800;
+        .btn-modo:hover {
             transform: scale(1.02);
         }
 
-        .btn-primary:active {
+        .btn-modo:active {
             transform: scale(0.98);
         }
 
-        .btn-secondary {
-            background-color: #2c2c2e;
-            color: #E2E5DE;
-            border: 1px solid #FECD0A;
-        }
-
-        .btn-secondary:hover {
-            background-color: #3c3c3e;
-            transform: scale(1.02);
-        }
-
-        /* Modo atual */
-        .modo-atual {
-            text-align: center;
-            padding: 10px;
-            background-color: #2c2c2e;
-            border-radius: 8px;
-            font-size: 13px;
-            font-weight: 500;
-        }
-
-        .modo-badge {
-            display: inline-block;
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-weight: bold;
-            margin-left: 8px;
-        }
-
-        .modo-auto {
-            background-color: #003300;
-            color: #00ff00;
-        }
-
-        .modo-manual {
-            background-color: #3a0000;
-            color: #ff4444;
-        }
-
-        /* Scrollbar customizada (caso precise, mas não vai precisar) */
+        /* Scrollbar customizada */
         .control-panel::-webkit-scrollbar {
             width: 6px;
         }
@@ -345,20 +310,15 @@
 </head>
 <body>
     <div class="dashboard">
-        <!-- Lado esquerdo: Camera (50% da tela, imagem inteira sem cortes) -->
+        <!-- Lado esquerdo: Camera -->
         <div class="camera-section">
             <div class="video-container">
                 <img id="videoFeed" src="{{ url_for('video_feed') }}" alt="Feed da camera">
             </div>
         </div>
 
-        <!-- Lado direito: Painel de Controle (50% da tela) -->
+        <!-- Lado direito: Painel de Controle -->
         <div class="control-panel">
-            <div class="title">
-                <h1>SEMAFORO INTELIGENTE</h1>
-                <p>Sistema de controle automatizado</p>
-            </div>
-
             <!-- Contadores -->
             <div class="counters">
                 <div class="counter-card">
@@ -378,32 +338,28 @@
                     <div class="via-status" id="viaAStatus">
                         <div class="via-label">VIA A</div>
                         <div class="luz luz-verde" id="luzAVerde"></div>
+                        <div class="luz luz-amarela" id="luzAAmarela"></div>
                         <div class="luz luz-vermelha" id="luzAVermelha"></div>
                         <div class="status-texto" id="viaATexto">FECHADO</div>
                     </div>
                     <div class="via-status" id="viaBStatus">
                         <div class="via-label">VIA B</div>
                         <div class="luz luz-verde" id="luzBVerde"></div>
+                        <div class="luz luz-amarela" id="luzAAmarelaB"></div>
                         <div class="luz luz-vermelha" id="luzBVermelha"></div>
                         <div class="status-texto" id="viaBTexto">FECHADO</div>
                     </div>
                 </div>
             </div>
 
-            <!-- Botoes de Controle -->
-            <div class="botoes">
-                <button class="btn btn-primary" id="btnAlternar">
-                    ALTERNAR SEMAFORO
+            <!-- Botões de Modo -->
+            <div class="modos-container">
+                <button class="btn-modo" id="btnManual">
+                    MODO MANUAL
                 </button>
-                <button class="btn btn-secondary" id="btnAuto">
+                <button class="btn-modo" id="btnAuto">
                     MODO AUTOMATICO
                 </button>
-            </div>
-
-            <!-- Indicador de Modo -->
-            <div class="modo-atual">
-                MODO ATUAL:
-                <span class="modo-badge" id="modoBadge">AUTOMATICO</span>
             </div>
         </div>
     </div>
@@ -415,65 +371,120 @@
         // Elementos DOM
         const contadorCarrosEl = document.getElementById('contadorCarros');
         const contadorPedestresEl = document.getElementById('contadorPedestres');
-        const btnAlternar = document.getElementById('btnAlternar');
+        const btnManual = document.getElementById('btnManual');
         const btnAuto = document.getElementById('btnAuto');
-        const modoBadge = document.getElementById('modoBadge');
         
         // Elementos do semaforo via A
         const viaAStatus = document.getElementById('viaAStatus');
         const luzAVerde = document.getElementById('luzAVerde');
+        const luzAAmarela = document.getElementById('luzAAmarela');
         const luzAVermelha = document.getElementById('luzAVermelha');
         const viaATexto = document.getElementById('viaATexto');
         
         // Elementos do semaforo via B
         const viaBStatus = document.getElementById('viaBStatus');
         const luzBVerde = document.getElementById('luzBVerde');
+        const luzAAmarelaB = document.getElementById('luzAAmarelaB');
         const luzBVermelha = document.getElementById('luzBVermelha');
         const viaBTexto = document.getElementById('viaBTexto');
 
-        // Funcao para atualizar o semaforo na interface
-        function atualizarSemaforo(via) {
+        let currentMode = 'auto'; // 'auto' ou 'manual'
+        let currentLight = 'A'; // 'A' ou 'B'
+
+        // Função para atualizar o semáforo na interface (com suporte ao amarelo)
+        function atualizarSemaforo(via, estadoAmarelo = false) {
             if (via === 'A') {
-                // Via A verde, via B vermelho
-                luzAVerde.classList.add('acesa');
-                luzAVermelha.classList.remove('acesa');
-                viaATexto.textContent = 'LIBERADO';
-                viaAStatus.classList.add('ativo');
-                
-                luzBVerde.classList.remove('acesa');
-                luzBVermelha.classList.add('acesa');
-                viaBTexto.textContent = 'FECHADO';
-                viaBStatus.classList.remove('ativo');
+                if (estadoAmarelo) {
+                    // Amarelo intermitente na A
+                    luzAVerde.classList.remove('acesa');
+                    luzAAmarela.classList.add('acesa');
+                    luzAVermelha.classList.remove('acesa');
+                    viaATexto.textContent = 'ATENÇÃO';
+                    
+                    luzBVerde.classList.remove('acesa');
+                    luzAAmarelaB.classList.remove('acesa');
+                    luzBVermelha.classList.add('acesa');
+                    viaBTexto.textContent = 'FECHADO';
+                    viaBStatus.classList.remove('ativo');
+                    viaAStatus.classList.add('ativo');
+                } else {
+                    // Verde na A, Vermelho na B
+                    luzAVerde.classList.add('acesa');
+                    luzAAmarela.classList.remove('acesa');
+                    luzAVermelha.classList.remove('acesa');
+                    viaATexto.textContent = 'LIBERADO';
+                    viaAStatus.classList.add('ativo');
+                    
+                    luzBVerde.classList.remove('acesa');
+                    luzAAmarelaB.classList.remove('acesa');
+                    luzBVermelha.classList.add('acesa');
+                    viaBTexto.textContent = 'FECHADO';
+                    viaBStatus.classList.remove('ativo');
+                }
             } else if (via === 'B') {
-                // Via B verde, via A vermelho
-                luzAVerde.classList.remove('acesa');
-                luzAVermelha.classList.add('acesa');
-                viaATexto.textContent = 'FECHADO';
-                viaAStatus.classList.remove('ativo');
-                
-                luzBVerde.classList.add('acesa');
-                luzBVermelha.classList.remove('acesa');
-                viaBTexto.textContent = 'LIBERADO';
-                viaBStatus.classList.add('ativo');
+                if (estadoAmarelo) {
+                    // Amarelo intermitente na B
+                    luzAVerde.classList.remove('acesa');
+                    luzAAmarela.classList.remove('acesa');
+                    luzAVermelha.classList.add('acesa');
+                    viaATexto.textContent = 'FECHADO';
+                    
+                    luzBVerde.classList.remove('acesa');
+                    luzAAmarelaB.classList.add('acesa');
+                    luzBVermelha.classList.remove('acesa');
+                    viaBTexto.textContent = 'ATENÇÃO';
+                    viaAStatus.classList.remove('ativo');
+                    viaBStatus.classList.add('ativo');
+                } else {
+                    // Vermelho na A, Verde na B
+                    luzAVerde.classList.remove('acesa');
+                    luzAAmarela.classList.remove('acesa');
+                    luzAVermelha.classList.add('acesa');
+                    viaATexto.textContent = 'FECHADO';
+                    viaAStatus.classList.remove('ativo');
+                    
+                    luzBVerde.classList.add('acesa');
+                    luzAAmarelaB.classList.remove('acesa');
+                    luzBVermelha.classList.remove('acesa');
+                    viaBTexto.textContent = 'LIBERADO';
+                    viaBStatus.classList.add('ativo');
+                }
             }
         }
 
-        // Funcao para atualizar contadores
+        // Função para atualizar contadores
         function atualizarContadores(carros, pedestres) {
             contadorCarrosEl.textContent = carros;
             contadorPedestresEl.textContent = pedestres;
         }
 
-        // Funcao para atualizar o modo
-        function atualizarModo(modo) {
+        // Função para atualizar o modo nos botões
+        function atualizarModoUI(modo) {
             if (modo === 'auto') {
-                modoBadge.textContent = 'AUTOMATICO';
-                modoBadge.className = 'modo-badge modo-auto';
-                btnAlternar.disabled = false;
+                btnAuto.classList.add('ativo');
+                btnManual.classList.remove('ativo');
+                currentMode = 'auto';
+                // Remove cursor pointer dos cards no modo automático
+                viaAStatus.classList.remove('clickable');
+                viaBStatus.classList.remove('clickable');
             } else if (modo === 'manual') {
-                modoBadge.textContent = 'MANUAL';
-                modoBadge.className = 'modo-badge modo-manual';
-                btnAlternar.disabled = false;
+                btnManual.classList.add('ativo');
+                btnAuto.classList.remove('ativo');
+                currentMode = 'manual';
+                // Adiciona cursor pointer nos cards no modo manual
+                viaAStatus.classList.add('clickable');
+                viaBStatus.classList.add('clickable');
+            }
+        }
+
+        // Função para alternar manualmente o semáforo (usado pelos cards)
+        function alternarSemaforoManual(via) {
+            if (currentMode === 'manual') {
+                if (via === 'A') {
+                    socket.emit('alternar_semaforo_manual', { via: 'A' });
+                } else if (via === 'B') {
+                    socket.emit('alternar_semaforo_manual', { via: 'B' });
+                }
             }
         }
 
@@ -483,15 +494,17 @@
         });
 
         socket.on('status_inicial', function(data) {
-            atualizarSemaforo(data.semaforo);
+            currentLight = data.semaforo;
+            atualizarSemaforo(data.semaforo, data.amarelo || false);
             atualizarContadores(data.carros, data.pedestres);
-            atualizarModo(data.modo);
+            atualizarModoUI(data.modo);
         });
 
         socket.on('status_update', function(data) {
-            atualizarSemaforo(data.semaforo);
+            currentLight = data.semaforo;
+            atualizarSemaforo(data.semaforo, data.amarelo || false);
             atualizarContadores(data.carros, data.pedestres);
-            atualizarModo(data.modo);
+            atualizarModoUI(data.modo);
         });
 
         socket.on('contadores_update', function(data) {
@@ -499,16 +512,29 @@
             contadorPedestresEl.textContent = data.pedestres;
         });
 
-        // Botoes events
-        btnAlternar.addEventListener('click', function() {
-            socket.emit('alternar_semaforo');
+        // Eventos dos botões
+        btnManual.addEventListener('click', function() {
+            socket.emit('ativar_manual');
         });
 
         btnAuto.addEventListener('click', function() {
             socket.emit('ativar_auto');
         });
 
-        // Inicializar estado padrao
+        // Eventos dos cards (seleção manual do semáforo)
+        viaAStatus.addEventListener('click', function() {
+            if (currentMode === 'manual') {
+                alternarSemaforoManual('A');
+            }
+        });
+
+        viaBStatus.addEventListener('click', function() {
+            if (currentMode === 'manual') {
+                alternarSemaforoManual('B');
+            }
+        });
+
+        // Inicializar estado padrão
         luzAVermelha.classList.add('acesa');
         luzBVerde.classList.add('acesa');
     </script>
