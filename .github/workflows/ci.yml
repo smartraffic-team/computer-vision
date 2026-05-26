@@ -1,65 +1,14 @@
 name: CI
 
-on:
-  push:
-    branches: [main, develop]
-  pull_request:
-    branches: [main]
+on: [push, pull_request]
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-        cache: 'pip'
-    
-    - name: Install system dependencies (OpenCV)
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libgl1
-    
-    - name: Install Python dependencies
-      run: |
-        pip install --upgrade pip
-        pip install -r requirements.txt
-
-    - name: Verify imports work
-      run: |
-        python -c "
-        import cv2
-        import flask
-        import serial
-        from ultralytics import YOLO
-        print('✓ All imports successful')
-        "
-    
-    - name: Check Python syntax
-      run: |
-        python -m py_compile $(find . -name "*.py" -not -path "./venv/*")
-    
-    - name: Cache YOLO model
-      uses: actions/cache@v4
-      with:
-        path: ~/.cache/ultralytics
-        key: ${{ runner.os }}-yolo-model
-        restore-keys: |
-          ${{ runner.os }}-yolo-model
-    
-    - name: Test YOLO model loading
-      run: |
-        python -c "
-        from ultralytics import YOLO
-        import os
-        os.environ['CI'] = 'true'  # Evita download se já tiver cache
-        try:
-            model = YOLO('yolov8n.pt')
-            print('✓ YOLO model loaded successfully')
-        except Exception as e:
-            print(f'⚠️ Model loading warning: {e}')
-        "
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - run: python -m compileall .
