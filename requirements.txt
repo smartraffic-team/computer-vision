@@ -1,0 +1,7 @@
+flask==3.0.0
+flask-socketio==5.3.6
+opencv-python==4.8.1.78
+pyserial==3.5
+ultralytics==8.0.232
+python-engineio==4.7.1
+python-socketio==5.10.0

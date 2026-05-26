@@ -1,0 +1,36 @@
+name: CI - Computer Vision
+
+on: [push, pull_request]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Install system deps
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libgl1-mesa-glx
+    
+    - name: Install Python deps
+      run: |
+        pip install flake8 pylint
+        pip install -r requirements.txt
+    
+    - name: Check syntax only
+      run: |
+        python -m py_compile seu_arquivo.py
+    
+    - name: Lint
+      run: flake8 . --max-line-length=120 --ignore=E501
+    
+    - name: Verify imports work
+      run: |
+        python -c "import cv2; import flask; import serial; from ultralytics import YOLO; print('✓ All imports OK')"
