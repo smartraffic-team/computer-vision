@@ -25,6 +25,7 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'sua_chave_secreta_aqui'
 socketio = SocketIO(app, cors_allowed_origins='*')
 
+
 class TrafficController:
     def __init__(self):
         self.current_light = 'A'
@@ -186,20 +187,25 @@ class TrafficController:
     def activate_auto(self):
         self.manual_mode = False
 
+
 controller = TrafficController()
+
 
 @app.route('/')
 def index():
     return render_template('index.html')
 
+
 @app.route('/video_feed')
 def video_feed():
     return Response(controller.generate_stream(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
 
 @socketio.on('connect')
 def handle_connect():
     logging.info('Cliente conectado')
     emit('status_inicial', controller.status_payload())
+
 
 @socketio.on('alternar_semaforo')
 def handle_alternar():
@@ -207,12 +213,14 @@ def handle_alternar():
     logging.info('Modo manual ativado: %s', controller.current_light)
     emit('status_update', controller.status_payload(), broadcast=True)
 
+
 @socketio.on('ativar_auto')
 def handle_ativar_auto():
     controller.activate_auto()
     logging.info('Modo automático ativado')
     emit('status_update', controller.status_payload(), broadcast=True)
 
+    
 if __name__ == '__main__':
     logging.info('Iniciando semáforo inteligente')
     controller.connect_arduino()
