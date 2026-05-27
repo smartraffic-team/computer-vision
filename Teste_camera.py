@@ -10,7 +10,7 @@ from ultralytics import YOLO
 LOG_FORMAT = '%(asctime)s [%(levelname)s] %(message)s'
 logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 
-PORTA_ARDUINO = '/dev/ttyUSB0'  # No Windows pode ser 'COM3', 'COM4', etc.
+PORTA_ARDUINO = '/dev/ttyUSB0'  # No Windows: 'COM3', 'COM4', etc.
 LIMIAR_TROCA_B = 3
 LIMIAR_VOLTA_A = 1
 CAMERA_INDEX = 1
@@ -20,8 +20,8 @@ FRAME_RATE = 30
 DETECTION_FRAME_SKIP = 3
 JPEG_QUALITY = 80
 MODEL_PATH = 'yolov8n.pt'
-INACTIVITY_TIMEOUT = 15  # 15 segundos sem detectar veículos
-NORMAL_CYCLE_TIME = 10   # Tempo do ciclo normal em segundos (ajustável)
+INACTIVITY_TIMEOUT = 15
+NORMAL_CYCLE_TIME = 10
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'sua_chave_secreta_aqui'
@@ -42,10 +42,10 @@ class TrafficController:
         self.running = threading.Event()
         self.frame_counter = 0
         self.yellow_blink = False
+        self.is_changing = False  # Evita mudanças durante transição
         
-        # Novos atributos para controle de inatividade
+        # Controle de inatividade
         self.last_detection_time = time.time()
-        self.normal_cycle_timer = None
         self.in_normal_cycle = False
         self.cycle_start_time = 0
 
@@ -89,14 +89,83 @@ class TrafficController:
         try:
             self.arduino.write(command.encode())
             logging.info('Comando enviado ao Arduino: %s', command)
-            time.sleep(0.1)
-            while self.arduino.in_waiting:
-                response = self.arduino.readline().decode().strip()
-                logging.info('Resposta Arduino: %s', response)
             return True
         except Exception as error:
             logging.warning('Erro ao enviar comando: %s', error)
             return False
+
+    def simulate_yellow_blink_on_web(self, via):
+        """Simula o pisca-pisca amarelo na web enquanto o Arduino faz o dele"""
+        logging.info('Simulando pisca-pisca amarelo na web para via %s', via)
+        
+        if via == 'A':
+            luz_amarela = 'luzAAmarela'
+        else:
+            luz_amarela = 'luzAAmarelaB'
+        
+        # Pisca 3 vezes (cada ciclo liga/desliga dura 1 segundo)
+        for i in range(6):  # 6 eventos = 3 piscadas completas
+            if i % 2 == 0:
+                socketio.emit('yellow_blink_web', {'via': via, 'state': 'on'})
+            else:
+                socketio.emit('yellow_blink_web', {'via': via, 'state': 'off'})
+            time.sleep(0.5)
+        
+        # Garante que o amarelo apaga no final
+        socketio.emit('yellow_blink_web', {'via': via, 'state': 'off'})
+
+    def change_light(self, new_light):
+        """Muda o semáforo enviando comando para o Arduino e sincronizando a web"""
+        if self.is_changing:
+            logging.warning('Já está em processo de mudança, ignorando...')
+            return
+        
+        self.is_changing = True
+        
+        if new_light == 'B':
+            # Vai trocar de A para B
+            logging.info('Trocando de A para B - aguardando Arduino piscar amarelo')
+            
+            # Notifica web que vai começar o pisca-pisca
+            socketio.emit('yellow_blink_web', {'via': 'A', 'state': 'start'})
+            
+            # Envia comando para o Arduino (ele vai piscar amarelo B 3x)
+            self.send_command('B')
+            
+            # Simula o pisca-pisca na web em paralelo
+            self.simulate_yellow_blink_on_web('A')
+            
+            # Aguarda o tempo do pisca-pisca do Arduino (3 piscadas * 1 segundo = 3 segundos)
+            time.sleep(3)
+            
+            # Atualiza estado após troca
+            self.current_light = 'B'
+            
+        elif new_light == 'A':
+            # Vai trocar de B para A
+            logging.info('Trocando de B para A - aguardando Arduino piscar amarelo')
+            
+            # Notifica web que vai começar o pisca-pisca
+            socketio.emit('yellow_blink_web', {'via': 'B', 'state': 'start'})
+            
+            # Envia comando para o Arduino (ele vai piscar amarelo A 3x)
+            self.send_command('A')
+            
+            # Simula o pisca-pisca na web em paralelo
+            self.simulate_yellow_blink_on_web('B')
+            
+            # Aguarda o tempo do pisca-pisca do Arduino
+            time.sleep(3)
+            
+            # Atualiza estado após troca
+            self.current_light = 'A'
+        
+        self.yellow_blink = False
+        self.is_changing = False
+        
+        # Atualiza interface web
+        socketio.emit('status_update', self.status_payload())
+        logging.info('Troca concluída - Via %s liberada', self.current_light)
 
     def detect_objects(self, frame):
         if self.model is None:
@@ -119,17 +188,18 @@ class TrafficController:
 
     def check_inactivity_and_cycle(self):
         """Verifica se está inativo e gerencia o ciclo normal"""
+        if self.is_changing:
+            return  # Não faz nada durante transição
+            
         current_time = time.time()
         time_since_last_detection = current_time - self.last_detection_time
         
-        # Se não está em modo manual e detectou inatividade
         if not self.manual_mode and time_since_last_detection >= INACTIVITY_TIMEOUT:
             if not self.in_normal_cycle:
-                logging.info('Inatividade detectada por %d segundos - iniciando ciclo normal', INACTIVITY_TIMEOUT)
+                logging.info('Inatividade detectada - iniciando ciclo normal')
                 self.start_normal_cycle()
         
-        # Gerencia o timer do ciclo normal
-        if self.in_normal_cycle:
+        if self.in_normal_cycle and not self.is_changing:
             if current_time - self.cycle_start_time >= NORMAL_CYCLE_TIME:
                 self.alternate_normal_cycle()
 
@@ -137,71 +207,56 @@ class TrafficController:
         """Inicia o ciclo normal do semáforo"""
         self.in_normal_cycle = True
         self.cycle_start_time = time.time()
-        # Inicia com a via A
         if self.current_light != 'A':
-            self.current_light = 'A'
-            self.send_command('A')
-            logging.info('Ciclo normal iniciado - Via A liberada')
-        socketio.emit('status_update', self.status_payload())
+            self.change_light('A')
 
     def alternate_normal_cycle(self):
         """Alterna entre as vias no ciclo normal"""
         if self.current_light == 'A':
-            self.current_light = 'B'
-            self.send_command('B')
-            logging.info('Ciclo normal - Alternando para Via B')
+            self.change_light('B')
         else:
-            self.current_light = 'A'
-            self.send_command('A')
-            logging.info('Ciclo normal - Alternando para Via A')
+            self.change_light('A')
         
         self.cycle_start_time = time.time()
-        socketio.emit('status_update', self.status_payload())
 
     def stop_normal_cycle(self):
         """Para o ciclo normal quando veículos são detectados"""
         if self.in_normal_cycle:
             self.in_normal_cycle = False
             logging.info('Veículos detectados - ciclo normal interrompido')
-            socketio.emit('status_update', self.status_payload())
 
     def update_traffic_state(self, cars, pedestrians):
+        if self.is_changing:
+            return  # Não atualiza estado durante transição
+            
         self.car_count = cars
         self.pedestrian_count = pedestrians
         
-        # Atualiza o tempo da última detecção se houver veículos
+        # Atualiza detecção se houver veículos
         if cars > 0:
             self.last_detection_time = time.time()
             if self.in_normal_cycle:
                 self.stop_normal_cycle()
 
         if self.manual_mode:
-            if self.manual_light != self.current_light:
-                self.current_light = self.manual_light
-                self.yellow_blink = False
-                self.send_command(self.current_light)
-                self.stop_normal_cycle()  # Para ciclo normal ao mudar manualmente
+            if self.manual_light != self.current_light and not self.is_changing:
+                self.change_light(self.manual_light)
         else:
-            # Verifica inatividade e ciclo normal primeiro
+            # Verifica inatividade e ciclo normal
             self.check_inactivity_and_cycle()
             
-            # Só faz a lógica normal de tráfego se não estiver em ciclo normal
-            if not self.in_normal_cycle:
+            # Lógica normal de tráfego (só se não estiver em ciclo normal)
+            if not self.in_normal_cycle and not self.is_changing:
                 if self.current_light == 'A' and cars >= LIMIAR_TROCA_B:
-                    self.current_light = 'B'
-                    self.yellow_blink = False
-                    self.send_command('B')
-                    self.last_detection_time = time.time()  # Reset timeout
-                    logging.info('Alto fluxo na via A - trocando para via B')
+                    self.change_light('B')
+                    self.last_detection_time = time.time()
+                    logging.info('Fluxo alto na A -> trocando para B')
                 elif self.current_light == 'B' and cars <= LIMIAR_VOLTA_A:
-                    self.current_light = 'A'
-                    self.yellow_blink = False
-                    self.send_command('A')
-                    self.last_detection_time = time.time()  # Reset timeout
-                    logging.info('Baixo fluxo na via B - voltando para via A')
+                    self.change_light('A')
+                    self.last_detection_time = time.time()
+                    logging.info('Fluxo baixo na B -> voltando para A')
 
-        # Emitir atualizações para todos os clientes
-        socketio.emit('status_update', self.status_payload())
+        # Emite atualizações de contadores
         socketio.emit('contadores_update', {
             'carros': self.car_count,
             'pedestres': self.pedestrian_count
@@ -213,8 +268,7 @@ class TrafficController:
             'carros': self.car_count,
             'pedestres': self.pedestrian_count,
             'modo': 'manual' if self.manual_mode else 'auto',
-            'amarelo': self.yellow_blink,
-            'ciclo_normal': self.in_normal_cycle  # Informa se está em ciclo normal
+            'amarelo': self.yellow_blink
         }
 
     def detection_loop(self):
@@ -223,7 +277,7 @@ class TrafficController:
             return
 
         self.running.set()
-        self.last_detection_time = time.time()  # Inicializa o timer
+        self.last_detection_time = time.time()
         
         while self.running.is_set():
             if self.cap is None or not self.cap.isOpened():
@@ -264,29 +318,31 @@ class TrafficController:
             time.sleep(1 / FRAME_RATE)
 
     def activate_manual(self):
+        if self.is_changing:
+            logging.warning('Aguardando troca atual finalizar...')
+            return
+            
         self.manual_mode = True
-        self.stop_normal_cycle()  # Para ciclo normal ao entrar em modo manual
-        logging.info('Modo manual ativado - aguardando seleção de via')
+        self.stop_normal_cycle()
+        logging.info('Modo manual ativado')
         socketio.emit('status_update', self.status_payload())
 
     def set_manual_light(self, via):
-        if self.manual_mode:
-            if via in ['A', 'B']:
-                self.manual_light = via
-                self.current_light = via
-                self.yellow_blink = False
-                self.send_command(via)
-                self.stop_normal_cycle()  # Para ciclo normal ao mudar manualmente
-                logging.info('Modo manual - alterado para via %s', via)
-                socketio.emit('status_update', self.status_payload())
+        if self.manual_mode and via in ['A', 'B'] and not self.is_changing:
+            self.manual_light = via
+            self.change_light(via)
+            self.stop_normal_cycle()
 
     def activate_auto(self):
+        if self.is_changing:
+            logging.warning('Aguardando troca atual finalizar...')
+            return
+            
         self.manual_mode = False
         self.yellow_blink = False
-        self.in_normal_cycle = False  # Reseta o ciclo normal
-        self.last_detection_time = time.time()  # Reseta o timeout
+        self.in_normal_cycle = False
+        self.last_detection_time = time.time()
         logging.info('Modo automático ativado')
-        self.send_command(self.current_light)
         socketio.emit('status_update', self.status_payload())
 
 
@@ -328,13 +384,6 @@ def handle_alternar_manual(data):
 
 if __name__ == '__main__':
     logging.info('Iniciando semáforo inteligente')
-    
-    # Para Windows:
-    # PORTA_ARDUINO = 'COM3'  # ou COM4, COM5, etc.
-    
-    # Para Linux/Mac:
-    # PORTA_ARDUINO = '/dev/ttyUSB0'
-    
     controller.connect_arduino()
 
     if not controller.initialize_camera():

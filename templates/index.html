@@ -103,28 +103,6 @@
             color: #E2E5DE;
         }
 
-        /* Indicador de ciclo normal */
-        .cycle-indicator {
-            text-align: center;
-            padding: 8px;
-            background-color: #2c2c2e;
-            border-radius: 8px;
-            font-size: 12px;
-            font-weight: 500;
-            margin-top: 10px;
-        }
-
-        .cycle-active {
-            background-color: #1a3a1a;
-            color: #00ff00;
-            border: 1px solid #00ff00;
-        }
-
-        .cycle-inactive {
-            background-color: #2c2c2e;
-            color: #a0a3a0;
-        }
-
         /* Card do semáforo */
         .semaforo-card {
             background-color: #2c2c2e;
@@ -338,7 +316,6 @@
                 <img id="videoFeed" src="{{ url_for('video_feed') }}" alt="Feed da camera">
             </div>
         </div>
-        
 
         <!-- Lado direito: Painel de Controle -->
         <div class="control-panel">
@@ -411,66 +388,94 @@
         const luzBVermelha = document.getElementById('luzBVermelha');
         const viaBTexto = document.getElementById('viaBTexto');
 
-        let currentMode = 'auto'; // 'auto' ou 'manual'
-        let currentLight = 'A'; // 'A' ou 'B'
+        let currentMode = 'auto';
+        let currentLight = 'A';
+        let blinkIntervalA = null;
+        let blinkIntervalB = null;
 
-        // Função para atualizar o semáforo na interface (com suporte ao amarelo)
-        function atualizarSemaforo(via, estadoAmarelo = false) {
+        // Função para atualizar o semáforo na interface
+        function atualizarSemaforo(via) {
             if (via === 'A') {
-                if (estadoAmarelo) {
-                    // Amarelo intermitente na A
-                    luzAVerde.classList.remove('acesa');
+                // Via A verde, via B vermelho
+                luzAVerde.classList.add('acesa');
+                // Garante que amarelo está apagado
+                luzAAmarela.classList.remove('acesa');
+                luzAVermelha.classList.remove('acesa');
+                viaATexto.textContent = 'LIBERADO';
+                viaAStatus.classList.add('ativo');
+                
+                luzBVerde.classList.remove('acesa');
+                luzAAmarelaB.classList.remove('acesa');
+                luzBVermelha.classList.add('acesa');
+                viaBTexto.textContent = 'FECHADO';
+                viaBStatus.classList.remove('ativo');
+            } else if (via === 'B') {
+                // Via B verde, via A vermelho
+                luzAVerde.classList.remove('acesa');
+                luzAAmarela.classList.remove('acesa');
+                luzAVermelha.classList.add('acesa');
+                viaATexto.textContent = 'FECHADO';
+                viaAStatus.classList.remove('ativo');
+                
+                luzBVerde.classList.add('acesa');
+                luzAAmarelaB.classList.remove('acesa');
+                luzBVermelha.classList.remove('acesa');
+                viaBTexto.textContent = 'LIBERADO';
+                viaBStatus.classList.add('ativo');
+            }
+        }
+
+        // Função para piscar amarelo na web sincronizado com o Arduino
+        function piscarAmareloWeb(via, action) {
+            if (via === 'A') {
+                if (action === 'on') {
                     luzAAmarela.classList.add('acesa');
-                    luzAVermelha.classList.remove('acesa');
-                    viaATexto.textContent = 'ATENÇÃO';
-                    
-                    luzBVerde.classList.remove('acesa');
-                    luzAAmarelaB.classList.remove('acesa');
-                    luzBVermelha.classList.add('acesa');
-                    viaBTexto.textContent = 'FECHADO';
-                    viaBStatus.classList.remove('ativo');
-                    viaAStatus.classList.add('ativo');
-                } else {
-                    // Verde na A, Vermelho na B
-                    luzAVerde.classList.add('acesa');
+                } else if (action === 'off') {
                     luzAAmarela.classList.remove('acesa');
-                    luzAVermelha.classList.remove('acesa');
-                    viaATexto.textContent = 'LIBERADO';
-                    viaAStatus.classList.add('ativo');
+                } else if (action === 'start') {
+                    // Para qualquer pisca anterior
+                    if (blinkIntervalA) clearInterval(blinkIntervalA);
                     
-                    luzBVerde.classList.remove('acesa');
-                    luzAAmarelaB.classList.remove('acesa');
-                    luzBVermelha.classList.add('acesa');
-                    viaBTexto.textContent = 'FECHADO';
-                    viaBStatus.classList.remove('ativo');
+                    let count = 0;
+                    blinkIntervalA = setInterval(() => {
+                        if (count >= 6) { // 3 piscadas completas
+                            clearInterval(blinkIntervalA);
+                            blinkIntervalA = null;
+                            luzAAmarela.classList.remove('acesa');
+                        } else {
+                            if (luzAAmarela.classList.contains('acesa')) {
+                                luzAAmarela.classList.remove('acesa');
+                            } else {
+                                luzAAmarela.classList.add('acesa');
+                            }
+                            count++;
+                        }
+                    }, 500);
                 }
             } else if (via === 'B') {
-                if (estadoAmarelo) {
-                    // Amarelo intermitente na B
-                    luzAVerde.classList.remove('acesa');
-                    luzAAmarela.classList.remove('acesa');
-                    luzAVermelha.classList.add('acesa');
-                    viaATexto.textContent = 'FECHADO';
-                    
-                    luzBVerde.classList.remove('acesa');
+                if (action === 'on') {
                     luzAAmarelaB.classList.add('acesa');
-                    luzBVermelha.classList.remove('acesa');
-                    viaBTexto.textContent = 'ATENÇÃO';
-                    viaAStatus.classList.remove('ativo');
-                    viaBStatus.classList.add('ativo');
-                } else {
-                    // Vermelho na A, Verde na B
-                    luzAVerde.classList.remove('acesa');
-                    luzAAmarela.classList.remove('acesa');
-                    luzAVermelha.classList.add('acesa');
-                    viaATexto.textContent = 'FECHADO';
-                    viaAStatus.classList.remove('ativo');
-                    
-                    luzBVerde.classList.add('acesa');
+                } else if (action === 'off') {
                     luzAAmarelaB.classList.remove('acesa');
-                    luzBVermelha.classList.remove('acesa');
-                    viaBTexto.textContent = 'LIBERADO';
-                    viaBStatus.classList.add('ativo');
+                } else if (action === 'start') {
+                    // Para qualquer pisca anterior
+                    if (blinkIntervalB) clearInterval(blinkIntervalB);
+                    
+                    let count = 0;
+                    blinkIntervalB = setInterval(() => {
+                        if (count >= 6) { // 3 piscadas completas
+                            clearInterval(blinkIntervalB);
+                            blinkIntervalB = null;
+                            luzAAmarelaB.classList.remove('acesa');
+                        } else {
+                            if (luzAAmarelaB.classList.contains('acesa')) {
+                                luzAAmarelaB.classList.remove('acesa');
+                            } else {
+                                luzAAmarelaB.classList.add('acesa');
+                            }
+                            count++;
+                        }
+                    }, 500);
                 }
             }
         }
@@ -500,17 +505,6 @@
             }
         }
 
-        // Função para alternar manualmente o semáforo (usado pelos cards)
-        function alternarSemaforoManual(via) {
-            if (currentMode === 'manual') {
-                if (via === 'A') {
-                    socket.emit('alternar_semaforo_manual', { via: 'A' });
-                } else if (via === 'B') {
-                    socket.emit('alternar_semaforo_manual', { via: 'B' });
-                }
-            }
-        }
-
         // Socket events
         socket.on('connect', function() {
             console.log('Conectado ao servidor');
@@ -518,14 +512,14 @@
 
         socket.on('status_inicial', function(data) {
             currentLight = data.semaforo;
-            atualizarSemaforo(data.semaforo, data.amarelo || false);
+            atualizarSemaforo(data.semaforo);
             atualizarContadores(data.carros, data.pedestres);
             atualizarModoUI(data.modo);
         });
 
         socket.on('status_update', function(data) {
             currentLight = data.semaforo;
-            atualizarSemaforo(data.semaforo, data.amarelo || false);
+            atualizarSemaforo(data.semaforo);
             atualizarContadores(data.carros, data.pedestres);
             atualizarModoUI(data.modo);
         });
@@ -535,31 +529,42 @@
             contadorPedestresEl.textContent = data.pedestres;
         });
 
+        // Evento para sincronizar o amarelo da web com o Arduino
+        socket.on('yellow_blink_web', function(data) {
+            console.log('Recebido yellow_blink_web:', data);
+            piscarAmareloWeb(data.via, data.state);
+        });
+
         // Eventos dos botões
         btnManual.addEventListener('click', function() {
+            console.log('Alternando para modo manual');
             socket.emit('ativar_manual');
         });
 
         btnAuto.addEventListener('click', function() {
+            console.log('Alternando para modo automático');
             socket.emit('ativar_auto');
         });
 
         // Eventos dos cards (seleção manual do semáforo)
         viaAStatus.addEventListener('click', function() {
             if (currentMode === 'manual') {
-                alternarSemaforoManual('A');
+                console.log('Selecionado via A manualmente');
+                socket.emit('alternar_semaforo_manual', { via: 'A' });
             }
         });
 
         viaBStatus.addEventListener('click', function() {
             if (currentMode === 'manual') {
-                alternarSemaforoManual('B');
+                console.log('Selecionado via B manualmente');
+                socket.emit('alternar_semaforo_manual', { via: 'B' });
             }
         });
 
-        // Inicializar estado padrão
-        luzAVermelha.classList.add('acesa');
-        luzBVerde.classList.add('acesa');
+        // Inicializar estado padrão (começa com A vermelho e B verde? Ajuste conforme necessário)
+        // Estado inicial padrão: Via A Verde, Via B Vermelho
+        luzAVerde.classList.add('acesa');
+        luzBVermelha.classList.add('acesa');
     </script>
 </body>
 </html>
