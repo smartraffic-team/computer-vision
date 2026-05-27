@@ -20,6 +20,8 @@ FRAME_RATE = 30
 DETECTION_FRAME_SKIP = 3
 JPEG_QUALITY = 80
 MODEL_PATH = 'yolov8n.pt'
+INACTIVITY_TIMEOUT = 15  # 15 segundos sem detectar veículos
+NORMAL_CYCLE_TIME = 10   # Tempo do ciclo normal em segundos (ajustável)
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'sua_chave_secreta_aqui'
@@ -40,6 +42,12 @@ class TrafficController:
         self.running = threading.Event()
         self.frame_counter = 0
         self.yellow_blink = False
+        
+        # Novos atributos para controle de inatividade
+        self.last_detection_time = time.time()
+        self.normal_cycle_timer = None
+        self.in_normal_cycle = False
+        self.cycle_start_time = 0
 
     def connect_arduino(self) -> bool:
         try:
@@ -109,24 +117,88 @@ class TrafficController:
 
         return cars, pedestrians
 
+    def check_inactivity_and_cycle(self):
+        """Verifica se está inativo e gerencia o ciclo normal"""
+        current_time = time.time()
+        time_since_last_detection = current_time - self.last_detection_time
+        
+        # Se não está em modo manual e detectou inatividade
+        if not self.manual_mode and time_since_last_detection >= INACTIVITY_TIMEOUT:
+            if not self.in_normal_cycle:
+                logging.info('Inatividade detectada por %d segundos - iniciando ciclo normal', INACTIVITY_TIMEOUT)
+                self.start_normal_cycle()
+        
+        # Gerencia o timer do ciclo normal
+        if self.in_normal_cycle:
+            if current_time - self.cycle_start_time >= NORMAL_CYCLE_TIME:
+                self.alternate_normal_cycle()
+
+    def start_normal_cycle(self):
+        """Inicia o ciclo normal do semáforo"""
+        self.in_normal_cycle = True
+        self.cycle_start_time = time.time()
+        # Inicia com a via A
+        if self.current_light != 'A':
+            self.current_light = 'A'
+            self.send_command('A')
+            logging.info('Ciclo normal iniciado - Via A liberada')
+        socketio.emit('status_update', self.status_payload())
+
+    def alternate_normal_cycle(self):
+        """Alterna entre as vias no ciclo normal"""
+        if self.current_light == 'A':
+            self.current_light = 'B'
+            self.send_command('B')
+            logging.info('Ciclo normal - Alternando para Via B')
+        else:
+            self.current_light = 'A'
+            self.send_command('A')
+            logging.info('Ciclo normal - Alternando para Via A')
+        
+        self.cycle_start_time = time.time()
+        socketio.emit('status_update', self.status_payload())
+
+    def stop_normal_cycle(self):
+        """Para o ciclo normal quando veículos são detectados"""
+        if self.in_normal_cycle:
+            self.in_normal_cycle = False
+            logging.info('Veículos detectados - ciclo normal interrompido')
+            socketio.emit('status_update', self.status_payload())
+
     def update_traffic_state(self, cars, pedestrians):
         self.car_count = cars
         self.pedestrian_count = pedestrians
+        
+        # Atualiza o tempo da última detecção se houver veículos
+        if cars > 0:
+            self.last_detection_time = time.time()
+            if self.in_normal_cycle:
+                self.stop_normal_cycle()
 
         if self.manual_mode:
             if self.manual_light != self.current_light:
                 self.current_light = self.manual_light
                 self.yellow_blink = False
                 self.send_command(self.current_light)
+                self.stop_normal_cycle()  # Para ciclo normal ao mudar manualmente
         else:
-            if self.current_light == 'A' and cars >= LIMIAR_TROCA_B:
-                self.current_light = 'B'
-                self.yellow_blink = False
-                self.send_command('B')
-            elif self.current_light == 'B' and cars <= LIMIAR_VOLTA_A:
-                self.current_light = 'A'
-                self.yellow_blink = False
-                self.send_command('A')
+            # Verifica inatividade e ciclo normal primeiro
+            self.check_inactivity_and_cycle()
+            
+            # Só faz a lógica normal de tráfego se não estiver em ciclo normal
+            if not self.in_normal_cycle:
+                if self.current_light == 'A' and cars >= LIMIAR_TROCA_B:
+                    self.current_light = 'B'
+                    self.yellow_blink = False
+                    self.send_command('B')
+                    self.last_detection_time = time.time()  # Reset timeout
+                    logging.info('Alto fluxo na via A - trocando para via B')
+                elif self.current_light == 'B' and cars <= LIMIAR_VOLTA_A:
+                    self.current_light = 'A'
+                    self.yellow_blink = False
+                    self.send_command('A')
+                    self.last_detection_time = time.time()  # Reset timeout
+                    logging.info('Baixo fluxo na via B - voltando para via A')
 
         # Emitir atualizações para todos os clientes
         socketio.emit('status_update', self.status_payload())
@@ -141,7 +213,8 @@ class TrafficController:
             'carros': self.car_count,
             'pedestres': self.pedestrian_count,
             'modo': 'manual' if self.manual_mode else 'auto',
-            'amarelo': self.yellow_blink
+            'amarelo': self.yellow_blink,
+            'ciclo_normal': self.in_normal_cycle  # Informa se está em ciclo normal
         }
 
     def detection_loop(self):
@@ -150,6 +223,8 @@ class TrafficController:
             return
 
         self.running.set()
+        self.last_detection_time = time.time()  # Inicializa o timer
+        
         while self.running.is_set():
             if self.cap is None or not self.cap.isOpened():
                 time.sleep(0.1)
@@ -190,6 +265,7 @@ class TrafficController:
 
     def activate_manual(self):
         self.manual_mode = True
+        self.stop_normal_cycle()  # Para ciclo normal ao entrar em modo manual
         logging.info('Modo manual ativado - aguardando seleção de via')
         socketio.emit('status_update', self.status_payload())
 
@@ -200,12 +276,15 @@ class TrafficController:
                 self.current_light = via
                 self.yellow_blink = False
                 self.send_command(via)
+                self.stop_normal_cycle()  # Para ciclo normal ao mudar manualmente
                 logging.info('Modo manual - alterado para via %s', via)
                 socketio.emit('status_update', self.status_payload())
 
     def activate_auto(self):
         self.manual_mode = False
         self.yellow_blink = False
+        self.in_normal_cycle = False  # Reseta o ciclo normal
+        self.last_detection_time = time.time()  # Reseta o timeout
         logging.info('Modo automático ativado')
         self.send_command(self.current_light)
         socketio.emit('status_update', self.status_payload())
@@ -249,10 +328,6 @@ def handle_alternar_manual(data):
 
 if __name__ == '__main__':
     logging.info('Iniciando semáforo inteligente')
-    
-    # No Windows, a porta serial geralmente é COMx
-    # Se estiver no Linux/Mac, mantenha '/dev/ttyUSB0'
-    # Descomente a linha apropriada:
     
     # Para Windows:
     # PORTA_ARDUINO = 'COM3'  # ou COM4, COM5, etc.

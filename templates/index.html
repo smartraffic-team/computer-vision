@@ -103,6 +103,28 @@
             color: #E2E5DE;
         }
 
+        /* Indicador de ciclo normal */
+        .cycle-indicator {
+            text-align: center;
+            padding: 8px;
+            background-color: #2c2c2e;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 500;
+            margin-top: 10px;
+        }
+
+        .cycle-active {
+            background-color: #1a3a1a;
+            color: #00ff00;
+            border: 1px solid #00ff00;
+        }
+
+        .cycle-inactive {
+            background-color: #2c2c2e;
+            color: #a0a3a0;
+        }
+
         /* Card do semáforo */
         .semaforo-card {
             background-color: #2c2c2e;
@@ -316,6 +338,7 @@
                 <img id="videoFeed" src="{{ url_for('video_feed') }}" alt="Feed da camera">
             </div>
         </div>
+        
 
         <!-- Lado direito: Painel de Controle -->
         <div class="control-panel">
