@@ -7,25 +7,14 @@ from flask import Flask, render_template, Response
 from flask_socketio import SocketIO, emit
 from ultralytics import YOLO
 
+from smarttraffic_config import settings
+
 LOG_FORMAT = '%(asctime)s [%(levelname)s] %(message)s'
 logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 
-PORTA_ARDUINO = '/dev/ttyUSB0'  # No Windows: 'COM3', 'COM4', etc.
-LIMIAR_TROCA_B = 3
-LIMIAR_VOLTA_A = 1
-CAMERA_INDEX = 1
-FRAME_WIDTH = 640
-FRAME_HEIGHT = 480
-FRAME_RATE = 30
-DETECTION_FRAME_SKIP = 3
-JPEG_QUALITY = 80
-MODEL_PATH = 'yolov8n.pt'
-INACTIVITY_TIMEOUT = 15
-NORMAL_CYCLE_TIME = 10
-
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'sua_chave_secreta_aqui'
-socketio = SocketIO(app, cors_allowed_origins='*')
+app.config['SECRET_KEY'] = settings.secret_key
+socketio = SocketIO(app, cors_allowed_origins=list(settings.cors_allowed_origins))
 
 
 class TrafficController:
@@ -51,9 +40,13 @@ class TrafficController:
 
     def connect_arduino(self) -> bool:
         try:
-            self.arduino = serial.Serial(PORTA_ARDUINO, 9600, timeout=1)
+            self.arduino = serial.Serial(
+                settings.arduino_port,
+                settings.arduino_baud_rate,
+                timeout=settings.arduino_timeout_seconds,
+            )
             time.sleep(2)
-            logging.info('Arduino conectado na porta %s', PORTA_ARDUINO)
+            logging.info('Arduino conectado na porta %s', settings.arduino_port)
             return True
         except Exception as error:
             logging.warning('Erro ao conectar Arduino: %s', error)
@@ -61,21 +54,21 @@ class TrafficController:
             return False
 
     def initialize_camera(self) -> bool:
-        self.cap = cv2.VideoCapture(CAMERA_INDEX)
+        self.cap = cv2.VideoCapture(settings.camera_index)
         if not self.cap.isOpened():
-            logging.warning('Câmera não inicializada no índice %s', CAMERA_INDEX)
+            logging.warning('Câmera não inicializada no índice %s', settings.camera_index)
             return False
 
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
-        self.cap.set(cv2.CAP_PROP_FPS, FRAME_RATE)
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, settings.frame_width)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, settings.frame_height)
+        self.cap.set(cv2.CAP_PROP_FPS, settings.frame_rate)
         logging.info('Câmera inicializada com sucesso')
         return True
 
     def load_model(self) -> bool:
         try:
-            self.model = YOLO(MODEL_PATH)
-            logging.info('Modelo carregado: %s', MODEL_PATH)
+            self.model = YOLO(settings.model_path)
+            logging.info('Modelo carregado: %s', settings.model_path)
             return True
         except Exception as error:
             logging.error('Falha ao carregar o modelo YOLO: %s', error)
@@ -171,7 +164,7 @@ class TrafficController:
         if self.model is None:
             return 0, 0
 
-        frame_resized = cv2.resize(frame, (FRAME_WIDTH, FRAME_HEIGHT))
+        frame_resized = cv2.resize(frame, (settings.frame_width, settings.frame_height))
         results = self.model(frame_resized, verbose=False)
 
         cars = 0
@@ -194,13 +187,13 @@ class TrafficController:
         current_time = time.time()
         time_since_last_detection = current_time - self.last_detection_time
         
-        if not self.manual_mode and time_since_last_detection >= INACTIVITY_TIMEOUT:
+        if not self.manual_mode and time_since_last_detection >= settings.inactivity_timeout_seconds:
             if not self.in_normal_cycle:
                 logging.info('Inatividade detectada - iniciando ciclo normal')
                 self.start_normal_cycle()
         
         if self.in_normal_cycle and not self.is_changing:
-            if current_time - self.cycle_start_time >= NORMAL_CYCLE_TIME:
+            if current_time - self.cycle_start_time >= settings.normal_cycle_seconds:
                 self.alternate_normal_cycle()
 
     def start_normal_cycle(self):
@@ -247,11 +240,11 @@ class TrafficController:
             
             # Lógica normal de tráfego (só se não estiver em ciclo normal)
             if not self.in_normal_cycle and not self.is_changing:
-                if self.current_light == 'A' and cars >= LIMIAR_TROCA_B:
+                if self.current_light == 'A' and cars >= settings.switch_to_b_threshold:
                     self.change_light('B')
                     self.last_detection_time = time.time()
                     logging.info('Fluxo alto na A -> trocando para B')
-                elif self.current_light == 'B' and cars <= LIMIAR_VOLTA_A:
+                elif self.current_light == 'B' and cars <= settings.return_to_a_threshold:
                     self.change_light('A')
                     self.last_detection_time = time.time()
                     logging.info('Fluxo baixo na B -> voltando para A')
@@ -292,30 +285,34 @@ class TrafficController:
             self.frame = frame.copy()
             self.frame_counter += 1
 
-            if self.frame_counter % DETECTION_FRAME_SKIP == 0:
+            if self.frame_counter % settings.detection_frame_skip == 0:
                 try:
                     cars, pedestrians = self.detect_objects(frame)
                     self.update_traffic_state(cars, pedestrians)
                 except Exception as error:
                     logging.warning('Erro na detecção: %s', error)
 
-            time.sleep(1 / FRAME_RATE)
+            time.sleep(1 / settings.frame_rate)
 
         logging.info('Loop de detecção encerrado')
 
     def generate_stream(self):
         while self.running.is_set():
             if self.frame is None:
-                time.sleep(1 / FRAME_RATE)
+                time.sleep(1 / settings.frame_rate)
                 continue
 
             frame_display = self.frame.copy()
-            success, buffer = cv2.imencode('.jpg', frame_display, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
+            success, buffer = cv2.imencode(
+                '.jpg',
+                frame_display,
+                [cv2.IMWRITE_JPEG_QUALITY, settings.jpeg_quality],
+            )
             if success:
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n\r\n')
 
-            time.sleep(1 / FRAME_RATE)
+            time.sleep(1 / settings.frame_rate)
 
     def activate_manual(self):
         if self.is_changing:
@@ -392,5 +389,9 @@ if __name__ == '__main__':
     thread_deteccao = threading.Thread(target=controller.detection_loop, daemon=True)
     thread_deteccao.start()
 
-    logging.info('Servidor web iniciado em: http://localhost:5000')
-    socketio.run(app, host='0.0.0.0', port=5000, debug=False)
+    logging.info(
+        'Servidor web iniciado em: http://%s:%s',
+        settings.server_host,
+        settings.server_port,
+    )
+    socketio.run(app, host=settings.server_host, port=settings.server_port, debug=False)

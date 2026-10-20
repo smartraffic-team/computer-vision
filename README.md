@@ -1,48 +1,76 @@
-# SmarTraffic - Visão Computacional
+# SmartTraffic — Visão Computacional
 
-Sistema de detecção de veículos, pedestres e PCDs usando **YOLOv8**, com streaming web via **Flask** e comunicação serial com **Arduino**.
+Protótipo acadêmico de controle semafórico adaptativo para uma maquete de cruzamento. A aplicação combina detecção de veículos e pessoas com YOLOv8, monitor local em Flask/Socket.IO e comunicação serial com Arduino.
 
----
+> O projeto é destinado exclusivamente a laboratório e maquete. Não deve ser usado para controlar trânsito real.
 
-## Estrutura Atual
-```
+## Estado atual
+
+Atualmente o projeto possui:
+
+- captura de uma câmera;
+- contagem global, por quadro, das classes `car` e `person`;
+- transmissão de vídeo por MJPEG;
+- modos manual e automático;
+- regra experimental de alternância por limiares;
+- comandos seriais legados `A` e `B` para o Arduino.
+
+Ainda não estão implementados: duas câmeras simultâneas, filas separadas por via, rastreamento persistente, fase de pedestres, protocolo serial com confirmação e máquina de estados completa com vermelho total e contingência.
+
+## Estrutura principal
+
+```text
 computer-vision/
-├── Smartrafic_web.py # Script principal (Flask + YOLO + Serial)
-├── Teste_camera.py # Teste rápido da câmera
-├── yolov8n.pt # Modelo YOLO treinado
-├── templates/ # Templates HTML da interface web
-├── LICENSE # Licença do projeto
-└── README.md # Este arquivo
+├── smarttraffic_app.py       # Aplicação principal atual
+├── smarttraffic_config.py    # Configuração por variáveis de ambiente
+├── .env.example              # Referência das opções disponíveis
+├── Smartrafic_web.py         # Protótipo legado de streaming
+├── templates/index.html      # Interface web local
+├── requirements.txt          # Dependências Python
+├── yolov8n.pt                # Pesos YOLOv8n presentes no repositório
+└── SMARTTRAFFIC_CONTEXT.md    # Contexto, requisitos e prioridades
 ```
 
----
+## Execução
 
-## Como rodar
-
-### Configurações importantes
-
-No arquivo `Smartrafic_web.py`:
-```python
-
-# Câmera (troque o índice se necessário)
-cap = cv2.VideoCapture(0)
-
-# Porta serial do Arduino
-ser = serial.Serial('COM3', 9600)      # Windows
-# ser = serial.Serial('/dev/ttyUSB0', 9600)  # Linux/Mac
-```
-
-### 1.Instalar dependências
+O CI do projeto usa Python 3.11. Recomenda-se criar um ambiente virtual com essa versão enquanto a compatibilidade com outras versões não for validada.
 
 ```bash
-pip install flask opencv-python ultralytics pyserial
+python -m venv venv
 ```
-### 2.Testar
+
+Ative o ambiente virtual e instale as dependências:
 
 ```bash
-python Smartrafic_web.py
+python -m pip install -r requirements.txt
 ```
 
-## 3.Acessar a interface
+As configurações possuem valores padrão e podem ser alteradas por variáveis de ambiente. O arquivo `.env.example` documenta todas as opções, mas não é carregado automaticamente pela aplicação.
 
-Abra o navegador em: http://localhost:5000
+Exemplo no PowerShell:
+
+```powershell
+$env:SMARTTRAFFIC_CAMERA_INDEX = '0'
+$env:SMARTTRAFFIC_ARDUINO_PORT = 'COM3'
+python smarttraffic_app.py
+```
+
+Para executar sem modificar os valores padrão:
+
+```bash
+python smarttraffic_app.py
+```
+
+A interface fica disponível por padrão em `http://127.0.0.1:5000`. Para permitir acesso a partir de outros dispositivos da rede, o host e as origens CORS precisam ser configurados explicitamente.
+
+As principais opções são:
+
+- `SMARTTRAFFIC_CAMERA_INDEX` e `SMARTTRAFFIC_ARDUINO_PORT`;
+- resolução, FPS, intervalo de detecção e qualidade JPEG;
+- limiares e tempos da lógica experimental atual;
+- caminho dos pesos YOLO;
+- host, porta, chave da aplicação e origens CORS.
+
+## Limitações de validação
+
+O código pode ser desenvolvido e testado com fontes e transportes simulados, mas a captura, a qualidade da detecção e as transições físicas precisam ser validadas posteriormente com a webcam, a maquete e o Arduino reais.
