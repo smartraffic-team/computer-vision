@@ -1,0 +1,3 @@
+output/*
+!output/.gitkeep
+scenarios/single_intersection/network/smarttraffic.net.xml

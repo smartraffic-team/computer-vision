@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<additional>
+    <tlLogic id="J0" type="static" programID="safe_fixed_cycle" offset="0">
+        <phase duration="10" state="rG" name="A_GREEN"/>
+        <phase duration="3" state="ry" name="A_YELLOW"/>
+        <phase duration="1" state="rr" name="ALL_RED_TO_B"/>
+        <phase duration="10" state="Gr" name="B_GREEN"/>
+        <phase duration="3" state="yr" name="B_YELLOW"/>
+        <phase duration="1" state="rr" name="ALL_RED_TO_A"/>
+    </tlLogic>
+</additional>

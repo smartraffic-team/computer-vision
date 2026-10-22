@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<additional>
+    <poly id="maquette_base" type="base" color="38,50,56" fill="true" layer="-10" shape="-5,-5 205,-5 205,205 -5,205"/>
+
+    <poly id="queue_zone_A" type="queue_zone" color="33,150,243,70" fill="true" layer="1" shape="45,93 96,93 96,104 45,104"/>
+    <poly id="queue_zone_B" type="queue_zone" color="254,205,10,70" fill="true" layer="1" shape="96,43 107,43 107,93 96,93"/>
+
+    <poi id="VIA_A" name="VIA A" type="approach" color="33,150,243" layer="10" x="50" y="112" width="4" height="4"/>
+    <poi id="VIA_B" name="VIA B" type="approach" color="254,205,10" layer="10" x="114" y="50" width="4" height="4"/>
+</additional>

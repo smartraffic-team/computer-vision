@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<routes>
+    <vType id="car_A" vClass="passenger" color="#2196F3" guiShape="passenger/sedan" accel="2.6" decel="4.5" sigma="0.5" length="4.5" minGap="2.5" maxSpeed="13.89"/>
+    <vType id="car_B" vClass="passenger" color="#FECD0A" guiShape="passenger/hatchback" accel="2.6" decel="4.5" sigma="0.5" length="4.5" minGap="2.5" maxSpeed="13.89"/>
+
+    <route id="route_A" edges="A_in A_out"/>
+    <route id="route_B" edges="B_in B_out"/>
+
+    <flow id="flow_A" type="car_A" route="route_A" begin="0" end="300" period="4" departLane="best" departSpeed="max"/>
+    <flow id="flow_B" type="car_B" route="route_B" begin="0" end="300" period="6" departLane="best" departSpeed="max"/>
+</routes>

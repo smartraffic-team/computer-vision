@@ -1,8 +1,8 @@
 # SmartTraffic — Contexto de desenvolvimento (Computer Vision)
 
-> **Atualizado em:** 20/10/2026  
-> **Objetivo:** documento de handoff para retomar o desenvolvimento do repositório [`smartraffic-team/computer-vision`](https://github.com/smartraffic-team/computer-vision) com um desenvolvedor ou agente de programação.  
-> **Fonte do estado técnico:** inspeção da branch `main` no GitHub em 20/10/2026, em conjunto com decisões do projeto e do artigo acadêmico.  
+> **Atualizado em:** 21/10/2026
+> **Objetivo:** documento de handoff para retomar o desenvolvimento do repositório [`smartraffic-team/computer-vision`](https://github.com/smartraffic-team/computer-vision) com um desenvolvedor ou agente de programação.
+> **Fonte do estado técnico:** inspeção da branch `main` no GitHub em 20/10/2026, em conjunto com decisões do projeto e do artigo acadêmico.
 > **Importante:** este documento é uma especificação/contexto, **não** indica que todas as funcionalidades foram implementadas. Conferir o código e testar antes de alterar.
 
 ## 1. Visão geral e propósito
@@ -189,7 +189,7 @@ Separar: (a) coleta/percepção, (b) estado estimado, (c) decisão de política,
 ### P3 — Evidência experimental
 
 - [ ] Salvar logs com timestamps e estado real dos sinais.
-- [ ] Implementar replay de cenários de chegada/sensores para testes repetíveis.
+- [ ] **Em andamento:** um primeiro cenário veicular repetível foi criado em `simulation/sumo/`; a integração com o controlador adaptativo e os cenários de falha ainda estão pendentes.
 - [ ] Estabelecer métrica do artigo: **tempo de retenção semafórica** do carrinho colocado em espera sob vermelho até a liberação do sinal; documentar limites de medição.
 - [ ] Comparar políticas `fixed_cycle` e `adaptive` sob entradas tão equivalentes quanto possível; relatar configuração, número de testes, médias, dispersão e falhas.
 - [ ] Verificar segurança e pedestres, não apenas a média dos carros.
@@ -198,7 +198,7 @@ Separar: (a) coleta/percepção, (b) estado estimado, (c) decisão de política,
 
 - [ ] API NestJS + banco MySQL/Aiven para telemetria/histórico, se a interface formal estiver definida.
 - [ ] Dashboard React com status/alertas/históricos.
-- [ ] Simulação de tráfego SUMO **somente se for retomada futuramente**; foi discutida como alternativa de validação virtual, mas o desenvolvimento foi explicitamente adiado.
+- [ ] **Em andamento:** simulação SUMO retomada como apoio ao desenvolvimento sem hardware; existe um cenário veicular inicial, ainda sem integração com visão computacional, Arduino ou controlador adaptativo.
 
 ## 7. Critérios mínimos de aceitação do MVP
 
@@ -242,4 +242,4 @@ Os testes físicos com carrinhos movidos manualmente têm limitação de velocid
 - https://github.com/smartraffic-team/computer-vision/blob/main/requirements.txt
 - https://github.com/smartraffic-team/arduino/blob/main/arduino_code.ino
 
-*Documento elaborado para continuidade do projeto em 20/10/2026. Caso o código seja alterado, atualizar esta seção de estado e as prioridades.*
+*Documento elaborado para continuidade do projeto em 20/10/2026 e atualizado em 21/10/2026. Caso o código seja alterado, atualizar esta seção de estado e as prioridades.*

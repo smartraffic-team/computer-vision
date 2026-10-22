@@ -24,6 +24,7 @@ computer-vision/
 ├── smarttraffic_app.py       # Aplicação principal atual
 ├── smarttraffic_config.py    # Configuração por variáveis de ambiente
 ├── .env.example              # Referência das opções disponíveis
+├── simulation/sumo/          # Cruzamento e sensores virtuais
 ├── Smartrafic_web.py         # Protótipo legado de streaming
 ├── templates/index.html      # Interface web local
 ├── requirements.txt          # Dependências Python
@@ -74,3 +75,7 @@ As principais opções são:
 ## Limitações de validação
 
 O código pode ser desenvolvido e testado com fontes e transportes simulados, mas a captura, a qualidade da detecção e as transições físicas precisam ser validadas posteriormente com a webcam, a maquete e o Arduino reais.
+
+## Simulação SUMO
+
+O primeiro cenário veicular virtual está documentado em [`simulation/sumo/README.md`](simulation/sumo/README.md). Ele permite observar filas nas vias A e B e as fases de um ciclo fixo seguro sem depender de webcam ou Arduino.
