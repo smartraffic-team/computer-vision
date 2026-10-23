@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <additional>
-    <poly id="maquette_base" type="base" color="38,50,56" fill="true" layer="-10" shape="-5,-5 205,-5 205,205 -5,205"/>
+    <poly id="maquette_base" type="base" color="255,255,255" fill="true" layer="-10" shape="-5,-5 205,-5 205,205 -5,205"/>
 
-    <poly id="queue_zone_A" type="queue_zone" color="33,150,243,70" fill="true" layer="1" shape="45,93 96,93 96,104 45,104"/>
-    <poly id="queue_zone_B" type="queue_zone" color="254,205,10,70" fill="true" layer="1" shape="96,43 107,43 107,93 96,93"/>
+    <poly id="queue_zone_A" type="queue_zone" color="33,150,243,100" fill="true" layer="1" shape="45,92 96,92 96,105 45,105"/>
+    <poly id="queue_zone_B" type="queue_zone" color="254,205,10,100" fill="true" layer="1" shape="95,43 108,43 108,93 95,93"/>
 
-    <poi id="VIA_A" name="VIA A" type="approach" color="33,150,243" layer="10" x="50" y="112" width="4" height="4"/>
-    <poi id="VIA_B" name="VIA B" type="approach" color="254,205,10" layer="10" x="114" y="50" width="4" height="4"/>
+    <poi id="VIA_A" name="VIA A" type="approach" color="33,150,243" layer="10" x="50" y="114" width="8" height="8"/>
+    <poi id="VIA_B" name="VIA B" type="approach" color="254,205,10" layer="10" x="116" y="50" width="8" height="8"/>
 </additional>

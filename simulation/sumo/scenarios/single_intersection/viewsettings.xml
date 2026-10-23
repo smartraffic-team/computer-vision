@@ -1,6 +1,49 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <viewsettings>
-    <scheme name="real world"/>
-    <viewport zoom="140" x="100" y="100" angle="0"/>
+    <scheme name="smarttraffic">
+        <opengl antialiase="1" dither="0"/>
+        <background backgroundColor="255,255,255" showGrid="0" gridXSize="25" gridYSize="25"/>
+
+        <edges laneEdgeMode="0" scaleMode="0" laneShowBorders="1" showLinkDecals="1" hideConnectors="1" widthExaggeration="1.25" minSize="0">
+            <colorScheme name="uniform">
+                <entry color="45,48,52" name="road"/>
+                <entry color="100,100,100" name="sidewalk"/>
+                <entry color="192,66,44" name="bike lane"/>
+                <entry color="0,0,0,0" name="green verge"/>
+                <entry color="70,110,130" name="waterway"/>
+            </colorScheme>
+        </edges>
+
+        <vehicles vehicleMode="0" vehicleQuality="2" vehicle_minSize="3" vehicle_exaggeration="1.8" vehicle_constantSize="0" showBlinker="1">
+            <colorScheme name="given vehicle/type/route color">
+                <entry color="white"/>
+            </colorScheme>
+        </vehicles>
+
+        <junctions junctionMode="0" drawLinkTLIndex="0" drawLinkJunctionIndex="0" showLane2Lane="0" drawShape="1">
+            <colorScheme name="uniform">
+                <entry color="35,38,42"/>
+                <entry color="70,110,130" name="waterway"/>
+            </colorScheme>
+        </junctions>
+
+        <additionals addMode="0" add_minSize="3" add_exaggeration="1.5" add_constantSize="0" addName_show="0"/>
+
+        <pois poi_minSize="4" poi_exaggeration="2" poi_constantSize="1" poiName_show="1" poiName_size="90" poiName_color="32,32,32" poiName_constantSize="1">
+            <colorScheme name="given POI color">
+                <entry color="white"/>
+            </colorScheme>
+        </pois>
+
+        <polys poly_minSize="0" poly_exaggeration="1" poly_constantSize="0" polyName_show="0">
+            <colorScheme name="given polygon color">
+                <entry color="white"/>
+            </colorScheme>
+        </polys>
+
+        <legend showSizeLegend="1"/>
+    </scheme>
+
+    <viewport zoom="190" x="100" y="100" angle="0"/>
     <delay value="200"/>
 </viewsettings>

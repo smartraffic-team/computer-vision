@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <additional>
-    <laneAreaDetector id="queue_A" lane="A_in_0" pos="-50" length="50" period="1" file="../../../output/detector_A.xml" friendlyPos="true"/>
-    <laneAreaDetector id="queue_B" lane="B_in_0" pos="-50" length="50" period="1" file="../../../output/detector_B.xml" friendlyPos="true"/>
+    <laneAreaDetector id="queue_A_0" lane="A_in_0" pos="-50" length="50" period="1" file="../../../output/detector_A_0.xml" friendlyPos="true"/>
+    <laneAreaDetector id="queue_A_1" lane="A_in_1" pos="-50" length="50" period="1" file="../../../output/detector_A_1.xml" friendlyPos="true"/>
+    <laneAreaDetector id="queue_B_0" lane="B_in_0" pos="-50" length="50" period="1" file="../../../output/detector_B_0.xml" friendlyPos="true"/>
+    <laneAreaDetector id="queue_B_1" lane="B_in_1" pos="-50" length="50" period="1" file="../../../output/detector_B_1.xml" friendlyPos="true"/>
 </additional>

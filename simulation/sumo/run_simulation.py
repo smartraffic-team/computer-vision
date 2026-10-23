@@ -11,7 +11,10 @@ BASE_DIRECTORY = Path(__file__).resolve().parent
 SCENARIO_DIRECTORY = BASE_DIRECTORY / 'scenarios' / 'single_intersection'
 CONFIGURATION_FILE = SCENARIO_DIRECTORY / 'smarttraffic.sumocfg'
 OUTPUT_DIRECTORY = BASE_DIRECTORY / 'output'
-DETECTORS = {'A': 'queue_A', 'B': 'queue_B'}
+DETECTORS = {
+    'A': ('queue_A_0', 'queue_A_1'),
+    'B': ('queue_B_0', 'queue_B_1'),
+}
 
 
 def non_negative_float(raw_value: str) -> float:
@@ -69,14 +72,19 @@ def run(*, use_gui: bool, rebuild_network: bool, delay_ms: float) -> None:
             if simulation_time - last_reported_second < 10:
                 continue
 
-            queues = {
-                via: traci.lanearea.getLastStepHaltingNumber(detector_id)
-                for via, detector_id in DETECTORS.items()
+            queues_by_lane = {
+                via: tuple(
+                    traci.lanearea.getLastStepHaltingNumber(detector_id)
+                    for detector_id in detector_ids
+                )
+                for via, detector_ids in DETECTORS.items()
             }
+            queues = {via: sum(lane_queues) for via, lane_queues in queues_by_lane.items()}
             phase_name = traci.trafficlight.getPhaseName('J0')
             print(
                 f't={simulation_time:>3}s | fase={phase_name:<12} | '
-                f'fila A={queues["A"]} | fila B={queues["B"]}'
+                f'fila A={queues["A"]} {queues_by_lane["A"]} | '
+                f'fila B={queues["B"]} {queues_by_lane["B"]}'
             )
             last_reported_second = simulation_time
     finally:

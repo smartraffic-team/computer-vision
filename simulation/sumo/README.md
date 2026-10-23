@@ -4,12 +4,14 @@ Este cenário representa o primeiro cruzamento virtual do projeto:
 
 - Via A no sentido oeste → leste;
 - Via B no sentido sul → norte;
-- uma faixa por via e somente movimentos retos;
+- duas faixas por via e somente movimentos retos;
 - semáforo com verde, amarelo e vermelho total;
-- detectores de área E2 nos 50 metros anteriores ao cruzamento;
+- um detector de área E2 por faixa nos 50 metros anteriores ao cruzamento;
 - fluxos veiculares determinísticos para permitir repetição.
 
 No modo gráfico, veículos da Via A são azuis e veículos da Via B são amarelos. As regiões transparentes próximas ao cruzamento representam as zonas observadas pelos detectores de fila. O tema, o zoom inicial e os elementos decorativos ficam versionados com o cenário.
+
+O tema também amplia visualmente veículos, marcadores e vias para facilitar a leitura. Essa ampliação é apenas gráfica: dimensões físicas, capacidade das faixas e métricas da simulação não são modificadas.
 
 O cenário valida a movimentação e os dados virtuais do SUMO. Ele ainda não usa a lógica adaptativa de `smarttraffic_app.py`, não simula a visão computacional e não representa uma validação do Arduino.
 

@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <connections>
     <connection from="A_in" to="A_out" fromLane="0" toLane="0" tl="J0" linkIndex="0"/>
-    <connection from="B_in" to="B_out" fromLane="0" toLane="0" tl="J0" linkIndex="1"/>
+    <connection from="A_in" to="A_out" fromLane="1" toLane="1" tl="J0" linkIndex="1"/>
+    <connection from="B_in" to="B_out" fromLane="0" toLane="0" tl="J0" linkIndex="2"/>
+    <connection from="B_in" to="B_out" fromLane="1" toLane="1" tl="J0" linkIndex="3"/>
 </connections>
