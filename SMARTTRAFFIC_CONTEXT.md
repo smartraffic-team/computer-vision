@@ -1,6 +1,6 @@
 # SmartTraffic — Contexto de desenvolvimento (Computer Vision)
 
-> **Atualizado em:** 21/10/2026
+> **Atualizado em:** 26/10/2026
 > **Objetivo:** documento de handoff para retomar o desenvolvimento do repositório [`smartraffic-team/computer-vision`](https://github.com/smartraffic-team/computer-vision) com um desenvolvedor ou agente de programação.
 > **Fonte do estado técnico:** inspeção da branch `main` no GitHub em 20/10/2026, em conjunto com decisões do projeto e do artigo acadêmico.
 > **Importante:** este documento é uma especificação/contexto, **não** indica que todas as funcionalidades foram implementadas. Conferir o código e testar antes de alterar.
@@ -181,7 +181,7 @@ Separar: (a) coleta/percepção, (b) estado estimado, (c) decisão de política,
 
 ### P2 — Controle adaptativo e pedestres
 
-- [ ] Contagem por via + desempate por veículo mais antigo ainda presente.
+- [ ] **Em andamento:** o SUMO já fornece contagem por via e desempate pelo veículo mais antigo ainda presente na zona virtual; integração equivalente com percepção real permanece pendente.
 - [ ] Limites de verde, anti-oscilações, fairness/starvation.
 - [ ] Solicitação de travessia e fase pedestre exclusiva com transições seguras, após decisão da equipe.
 - [ ] Modos manual, automático, fixo e contingência sem comandos inseguros.
@@ -189,16 +189,17 @@ Separar: (a) coleta/percepção, (b) estado estimado, (c) decisão de política,
 ### P3 — Evidência experimental
 
 - [ ] Salvar logs com timestamps e estado real dos sinais.
-- [ ] **Em andamento:** um primeiro cenário veicular repetível foi criado em `simulation/sumo/`; a integração com o controlador adaptativo e os cenários de falha ainda estão pendentes.
+- [x] O cenário veicular repetível em `simulation/sumo/` compara ciclo fixo e controlador adaptativo em execuções pareadas, gera métricas por veículo e fila e produz relatório reproduzível em `simulation/sumo/reports/`.
+- [ ] Ampliar o experimento para demandas equilibrada, saturada, variável e em rajadas, além de cenários de falha.
 - [ ] Estabelecer métrica do artigo: **tempo de retenção semafórica** do carrinho colocado em espera sob vermelho até a liberação do sinal; documentar limites de medição.
-- [ ] Comparar políticas `fixed_cycle` e `adaptive` sob entradas tão equivalentes quanto possível; relatar configuração, número de testes, médias, dispersão e falhas.
+- [x] Comparar políticas `fixed_cycle` e `adaptive` sob entradas equivalentes no cenário virtual; registrar configuração, repetições pareadas, médias, dispersão, intervalos e limitações.
 - [ ] Verificar segurança e pedestres, não apenas a média dos carros.
 
 ### P4 — Integrações complementares (não bloquear MVP)
 
 - [ ] API NestJS + banco MySQL/Aiven para telemetria/histórico, se a interface formal estiver definida.
 - [ ] Dashboard React com status/alertas/históricos.
-- [ ] **Em andamento:** simulação SUMO retomada como apoio ao desenvolvimento sem hardware; existe um cenário veicular inicial, ainda sem integração com visão computacional, Arduino ou controlador adaptativo.
+- [ ] **Em andamento:** simulação SUMO retomada como apoio ao desenvolvimento sem hardware e integrada a uma política adaptativa Python; a visão computacional e o Arduino continuam fora dessa validação.
 
 ## 7. Critérios mínimos de aceitação do MVP
 
@@ -242,4 +243,4 @@ Os testes físicos com carrinhos movidos manualmente têm limitação de velocid
 - https://github.com/smartraffic-team/computer-vision/blob/main/requirements.txt
 - https://github.com/smartraffic-team/arduino/blob/main/arduino_code.ino
 
-*Documento elaborado para continuidade do projeto em 20/10/2026 e atualizado em 21/10/2026. Caso o código seja alterado, atualizar esta seção de estado e as prioridades.*
+*Documento elaborado para continuidade do projeto em 20/10/2026 e atualizado em 26/10/2026. Caso o código seja alterado, atualizar esta seção de estado e as prioridades.*
