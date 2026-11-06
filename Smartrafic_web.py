@@ -5,7 +5,7 @@ import time
 app = Flask(__name__)
 
 # Inicializar câmera
-cap = cv2.VideoCapture(0)  # Tente 0, 1 ou 2 se não funcionar
+cap = cv2.VideoCapture(1)  # Tente 0, 1 ou 2 se não funcionar
 
 if not cap.isOpened():
     print("Erro: Não foi possível abrir a câmera")

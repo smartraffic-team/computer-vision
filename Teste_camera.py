@@ -10,10 +10,11 @@ from ultralytics import YOLO
 LOG_FORMAT = '%(asctime)s [%(levelname)s] %(message)s'
 logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 
-PORTA_ARDUINO = '/dev/ttyUSB0'  # No Windows: 'COM3', 'COM4', etc.
+PORTA_ARDUINO = 'COM4'  # No Windows: 'COM3', 'COM4', etc.
 LIMIAR_TROCA_B = 3
 LIMIAR_VOLTA_A = 1
-CAMERA_INDEX = 1
+CAMERA_A_INDEX = 0  # Webcam integrada do notebook
+CAMERA_B_INDEX = 1  # Webcam externa; ajuste se o Windows usar outro índice
 FRAME_WIDTH = 640
 FRAME_HEIGHT = 480
 FRAME_RATE = 30
@@ -35,8 +36,8 @@ class TrafficController:
         self.manual_light = 'A'
         self.car_count = 0
         self.pedestrian_count = 0
-        self.frame = None
-        self.cap = None
+        self.frames = {'A': None, 'B': None}
+        self.cameras = {'A': None, 'B': None}
         self.arduino = None
         self.model = None
         self.running = threading.Event()
@@ -60,17 +61,23 @@ class TrafficController:
             self.arduino = None
             return False
 
-    def initialize_camera(self) -> bool:
-        self.cap = cv2.VideoCapture(CAMERA_INDEX)
-        if not self.cap.isOpened():
-            logging.warning('Câmera não inicializada no índice %s', CAMERA_INDEX)
-            return False
+    def initialize_cameras(self) -> bool:
+        initialized = False
+        for via, camera_index in (('A', CAMERA_A_INDEX), ('B', CAMERA_B_INDEX)):
+            camera = cv2.VideoCapture(camera_index)
+            if not camera.isOpened():
+                logging.warning('Câmera da Via %s não inicializada no índice %s', via, camera_index)
+                camera.release()
+                continue
 
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
-        self.cap.set(cv2.CAP_PROP_FPS, FRAME_RATE)
-        logging.info('Câmera inicializada com sucesso')
-        return True
+            camera.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
+            camera.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
+            camera.set(cv2.CAP_PROP_FPS, FRAME_RATE)
+            self.cameras[via] = camera
+            initialized = True
+            logging.info('Câmera da Via %s inicializada no índice %s', via, camera_index)
+
+        return initialized
 
     def load_model(self) -> bool:
         try:
@@ -271,28 +278,40 @@ class TrafficController:
             'amarelo': self.yellow_blink
         }
 
+    def capture_camera_b_loop(self):
+        camera = self.cameras['B']
+        while self.running.is_set() and camera is not None:
+            success, frame = camera.read()
+            if success and frame is not None:
+                self.frames['B'] = frame
+            else:
+                time.sleep(0.1)
+
     def detection_loop(self):
+        self.running.set()
+        camera_b_thread = threading.Thread(target=self.capture_camera_b_loop, daemon=True)
+        camera_b_thread.start()
+
         if not self.load_model():
             logging.error('Detecção desativada: modelo não carregado')
-            return
 
-        self.running.set()
         self.last_detection_time = time.time()
         
         while self.running.is_set():
-            if self.cap is None or not self.cap.isOpened():
+            camera_a = self.cameras['A']
+            if camera_a is None or not camera_a.isOpened():
                 time.sleep(0.1)
                 continue
 
-            success, frame = self.cap.read()
+            success, frame = camera_a.read()
             if not success or frame is None:
                 time.sleep(0.1)
                 continue
 
-            self.frame = frame.copy()
+            self.frames['A'] = frame.copy()
             self.frame_counter += 1
 
-            if self.frame_counter % DETECTION_FRAME_SKIP == 0:
+            if self.model is not None and self.frame_counter % DETECTION_FRAME_SKIP == 0:
                 try:
                     cars, pedestrians = self.detect_objects(frame)
                     self.update_traffic_state(cars, pedestrians)
@@ -303,13 +322,14 @@ class TrafficController:
 
         logging.info('Loop de detecção encerrado')
 
-    def generate_stream(self):
+    def generate_stream(self, via):
         while self.running.is_set():
-            if self.frame is None:
+            frame = self.frames[via]
+            if frame is None:
                 time.sleep(1 / FRAME_RATE)
                 continue
 
-            frame_display = self.frame.copy()
+            frame_display = frame.copy()
             success, buffer = cv2.imencode('.jpg', frame_display, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
             if success:
                 yield (b'--frame\r\n'
@@ -354,9 +374,17 @@ def index():
     return render_template('index.html')
 
 
+@app.route('/video_feed/<via>')
+def video_feed(via):
+    via = via.upper()
+    if via not in ('A', 'B'):
+        return 'Via inválida', 404
+    return Response(controller.generate_stream(via), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+
 @app.route('/video_feed')
-def video_feed():
-    return Response(controller.generate_stream(), mimetype='multipart/x-mixed-replace; boundary=frame')
+def video_feed_a():
+    return Response(controller.generate_stream('A'), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 
 @socketio.on('connect')
@@ -386,8 +414,8 @@ if __name__ == '__main__':
     logging.info('Iniciando semáforo inteligente')
     controller.connect_arduino()
 
-    if not controller.initialize_camera():
-        logging.warning('Câmera não encontrada, executando em modo simulação')
+    if not controller.initialize_cameras():
+        logging.warning('Nenhuma câmera encontrada')
 
     thread_deteccao = threading.Thread(target=controller.detection_loop, daemon=True)
     thread_deteccao.start()
