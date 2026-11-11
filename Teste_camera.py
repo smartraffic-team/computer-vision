@@ -1,424 +1,161 @@
+"""Uma câmera e controle local adaptativo dos dois sinais da maquete."""
+
 import logging
-import time
+import os
+from pathlib import Path
 import threading
-import serial
+import time
+
 import cv2
-from flask import Flask, render_template, Response
+import numpy as np
+from flask import Flask, Response, render_template, request
 from flask_socketio import SocketIO, emit
-from ultralytics import YOLO
 
-LOG_FORMAT = '%(asctime)s [%(levelname)s] %(message)s'
-logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
-
-PORTA_ARDUINO = 'COM4'  # No Windows: 'COM3', 'COM4', etc.
-LIMIAR_TROCA_B = 3
-LIMIAR_VOLTA_A = 1
-CAMERA_A_INDEX = 0  # Webcam integrada do notebook
-CAMERA_B_INDEX = 1  # Webcam externa; ajuste se o Windows usar outro índice
-FRAME_WIDTH = 640
-FRAME_HEIGHT = 480
-FRAME_RATE = 30
-DETECTION_FRAME_SKIP = 3
-JPEG_QUALITY = 80
-MODEL_PATH = 'yolov8n.pt'
-INACTIVITY_TIMEOUT = 15
-NORMAL_CYCLE_TIME = 10
-
-app = Flask(__name__)
-app.config['SECRET_KEY'] = 'sua_chave_secreta_aqui'
-socketio = SocketIO(app, cors_allowed_origins='*')
+from vision import CameraMonitor, VisionConfig
+from traffic import TrafficController
+from ingestion import IngestionClient, IngestionConfig
 
 
-class TrafficController:
-    def __init__(self):
-        self.current_light = 'A'
-        self.manual_mode = False
-        self.manual_light = 'A'
-        self.car_count = 0
-        self.pedestrian_count = 0
-        self.frames = {'A': None, 'B': None}
-        self.cameras = {'A': None, 'B': None}
-        self.arduino = None
-        self.model = None
-        self.running = threading.Event()
-        self.frame_counter = 0
-        self.yellow_blink = False
-        self.is_changing = False  # Evita mudanças durante transição
-        
-        # Controle de inatividade
-        self.last_detection_time = time.time()
-        self.in_normal_cycle = False
-        self.cycle_start_time = 0
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
+BASE_DIR = Path(__file__).resolve().parent
+PORTA_ARDUINO = os.getenv('SMARTTRAFFIC_ARDUINO_PORT', 'COM5')
+CAMERA_INDEX = int(os.getenv('SMARTTRAFFIC_CAMERA_INDEX', '0'))
+VIA_OBSERVADA = os.getenv('SMARTTRAFFIC_OBSERVED_ROAD', 'A').upper()
+config = VisionConfig(
+    camera_index=CAMERA_INDEX,
+    camera_backend=os.getenv('SMARTTRAFFIC_CAMERA_BACKEND', VisionConfig.camera_backend).upper(),
+    observed_road=VIA_OBSERVADA,
+    width=int(os.getenv('SMARTTRAFFIC_FRAME_WIDTH', '640')),
+    height=int(os.getenv('SMARTTRAFFIC_FRAME_HEIGHT', '480')),
+    fps=int(os.getenv('SMARTTRAFFIC_FPS', '30')),
+    detection_interval=float(os.getenv('SMARTTRAFFIC_DETECTION_INTERVAL', '0.3')),
+    stale_after=float(os.getenv('SMARTTRAFFIC_STALE_AFTER', '5')),
+    confidence=float(os.getenv('SMARTTRAFFIC_CONFIDENCE', '0.35')),
+    roi=tuple(float(value) for value in os.getenv('SMARTTRAFFIC_ROI', '0,0,1,1').split(',')),
+)
+monitor = CameraMonitor(config)
+app = Flask(__name__, template_folder=str(BASE_DIR / 'templates'))
+socketio = SocketIO(app, async_mode='threading')
 
-    def connect_arduino(self) -> bool:
-        try:
-            self.arduino = serial.Serial(PORTA_ARDUINO, 9600, timeout=1)
-            time.sleep(2)
-            logging.info('Arduino conectado na porta %s', PORTA_ARDUINO)
-            return True
-        except Exception as error:
-            logging.warning('Erro ao conectar Arduino: %s', error)
-            self.arduino = None
-            return False
 
-    def initialize_cameras(self) -> bool:
-        initialized = False
-        for via, camera_index in (('A', CAMERA_A_INDEX), ('B', CAMERA_B_INDEX)):
-            camera = cv2.VideoCapture(camera_index)
-            if not camera.isOpened():
-                logging.warning('Câmera da Via %s não inicializada no índice %s', via, camera_index)
-                camera.release()
-                continue
+controller = TrafficController(PORTA_ARDUINO, monitor.snapshot, config.observed_road)
 
-            camera.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
-            camera.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
-            camera.set(cv2.CAP_PROP_FPS, FRAME_RATE)
-            self.cameras[via] = camera
-            initialized = True
-            logging.info('Câmera da Via %s inicializada no índice %s', via, camera_index)
 
-        return initialized
+def operational_snapshot():
+    return {**monitor.snapshot(), **controller.snapshot()}
 
-    def load_model(self) -> bool:
-        try:
-            self.model = YOLO(MODEL_PATH)
-            logging.info('Modelo carregado: %s', MODEL_PATH)
-            return True
-        except Exception as error:
-            logging.error('Falha ao carregar o modelo YOLO: %s', error)
-            self.model = None
-            return False
 
-    def send_command(self, command: str) -> bool:
-        if not self.arduino or not self.arduino.is_open:
-            return False
+try:
+    ingestion = IngestionClient(IngestionConfig.load(), operational_snapshot)
+except (ValueError, TypeError, OSError):
+    logging.warning('Configuração de ingestão inválida; controle local permanece disponível.')
+    ingestion = IngestionClient(IngestionConfig(), operational_snapshot)
+    ingestion.update_status(erro='Configuração de ingestão inválida.')
 
-        try:
-            self.arduino.write(command.encode())
-            logging.info('Comando enviado ao Arduino: %s', command)
-            return True
-        except Exception as error:
-            logging.warning('Erro ao enviar comando: %s', error)
-            return False
 
-    def simulate_yellow_blink_on_web(self, via):
-        """Simula o pisca-pisca amarelo na web enquanto o Arduino faz o dele"""
-        logging.info('Simulando pisca-pisca amarelo na web para via %s', via)
-        
-        if via == 'A':
-            luz_amarela = 'luzAAmarela'
+def status_payload():
+    return {**operational_snapshot(), 'ingestao': ingestion.status()}
+
+
+def generate_stream():
+    while True:
+        frame = monitor.display_frame()
+        if frame is None:
+            # Substitui um frame antigo quando a câmera não entrega imagem válida.
+            frame = np.zeros((config.height, config.width, 3), dtype=np.uint8)
+            cv2.putText(frame, 'Camera sem imagem', (20, 50),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 205, 254), 2)
         else:
-            luz_amarela = 'luzAAmarelaB'
-        
-        # Pisca 3 vezes (cada ciclo liga/desliga dura 1 segundo)
-        for i in range(6):  # 6 eventos = 3 piscadas completas
-            if i % 2 == 0:
-                socketio.emit('yellow_blink_web', {'via': via, 'state': 'on'})
-            else:
-                socketio.emit('yellow_blink_web', {'via': via, 'state': 'off'})
-            time.sleep(0.5)
-        
-        # Garante que o amarelo apaga no final
-        socketio.emit('yellow_blink_web', {'via': via, 'state': 'off'})
-
-    def change_light(self, new_light):
-        """Muda o semáforo enviando comando para o Arduino e sincronizando a web"""
-        if self.is_changing:
-            logging.warning('Já está em processo de mudança, ignorando...')
-            return
-        
-        self.is_changing = True
-        
-        if new_light == 'B':
-            # Vai trocar de A para B
-            logging.info('Trocando de A para B - aguardando Arduino piscar amarelo')
-            
-            # Notifica web que vai começar o pisca-pisca
-            socketio.emit('yellow_blink_web', {'via': 'A', 'state': 'start'})
-            
-            # Envia comando para o Arduino (ele vai piscar amarelo B 3x)
-            self.send_command('B')
-            
-            # Simula o pisca-pisca na web em paralelo
-            self.simulate_yellow_blink_on_web('A')
-            
-            # Aguarda o tempo do pisca-pisca do Arduino (3 piscadas * 1 segundo = 3 segundos)
-            time.sleep(3)
-            
-            # Atualiza estado após troca
-            self.current_light = 'B'
-            
-        elif new_light == 'A':
-            # Vai trocar de B para A
-            logging.info('Trocando de B para A - aguardando Arduino piscar amarelo')
-            
-            # Notifica web que vai começar o pisca-pisca
-            socketio.emit('yellow_blink_web', {'via': 'B', 'state': 'start'})
-            
-            # Envia comando para o Arduino (ele vai piscar amarelo A 3x)
-            self.send_command('A')
-            
-            # Simula o pisca-pisca na web em paralelo
-            self.simulate_yellow_blink_on_web('B')
-            
-            # Aguarda o tempo do pisca-pisca do Arduino
-            time.sleep(3)
-            
-            # Atualiza estado após troca
-            self.current_light = 'A'
-        
-        self.yellow_blink = False
-        self.is_changing = False
-        
-        # Atualiza interface web
-        socketio.emit('status_update', self.status_payload())
-        logging.info('Troca concluída - Via %s liberada', self.current_light)
-
-    def detect_objects(self, frame):
-        if self.model is None:
-            return 0, 0
-
-        frame_resized = cv2.resize(frame, (FRAME_WIDTH, FRAME_HEIGHT))
-        results = self.model(frame_resized, verbose=False)
-
-        cars = 0
-        pedestrians = 0
-        for result in results:
-            for box in result.boxes:
-                label = self.model.names[int(box.cls[0])]
-                if label == 'car':
-                    cars += 1
-                elif label == 'person':
-                    pedestrians += 1
-
-        return cars, pedestrians
-
-    def check_inactivity_and_cycle(self):
-        """Verifica se está inativo e gerencia o ciclo normal"""
-        if self.is_changing:
-            return  # Não faz nada durante transição
-            
-        current_time = time.time()
-        time_since_last_detection = current_time - self.last_detection_time
-        
-        if not self.manual_mode and time_since_last_detection >= INACTIVITY_TIMEOUT:
-            if not self.in_normal_cycle:
-                logging.info('Inatividade detectada - iniciando ciclo normal')
-                self.start_normal_cycle()
-        
-        if self.in_normal_cycle and not self.is_changing:
-            if current_time - self.cycle_start_time >= NORMAL_CYCLE_TIME:
-                self.alternate_normal_cycle()
-
-    def start_normal_cycle(self):
-        """Inicia o ciclo normal do semáforo"""
-        self.in_normal_cycle = True
-        self.cycle_start_time = time.time()
-        if self.current_light != 'A':
-            self.change_light('A')
-
-    def alternate_normal_cycle(self):
-        """Alterna entre as vias no ciclo normal"""
-        if self.current_light == 'A':
-            self.change_light('B')
-        else:
-            self.change_light('A')
-        
-        self.cycle_start_time = time.time()
-
-    def stop_normal_cycle(self):
-        """Para o ciclo normal quando veículos são detectados"""
-        if self.in_normal_cycle:
-            self.in_normal_cycle = False
-            logging.info('Veículos detectados - ciclo normal interrompido')
-
-    def update_traffic_state(self, cars, pedestrians):
-        if self.is_changing:
-            return  # Não atualiza estado durante transição
-            
-        self.car_count = cars
-        self.pedestrian_count = pedestrians
-        
-        # Atualiza detecção se houver veículos
-        if cars > 0:
-            self.last_detection_time = time.time()
-            if self.in_normal_cycle:
-                self.stop_normal_cycle()
-
-        if self.manual_mode:
-            if self.manual_light != self.current_light and not self.is_changing:
-                self.change_light(self.manual_light)
-        else:
-            # Verifica inatividade e ciclo normal
-            self.check_inactivity_and_cycle()
-            
-            # Lógica normal de tráfego (só se não estiver em ciclo normal)
-            if not self.in_normal_cycle and not self.is_changing:
-                if self.current_light == 'A' and cars >= LIMIAR_TROCA_B:
-                    self.change_light('B')
-                    self.last_detection_time = time.time()
-                    logging.info('Fluxo alto na A -> trocando para B')
-                elif self.current_light == 'B' and cars <= LIMIAR_VOLTA_A:
-                    self.change_light('A')
-                    self.last_detection_time = time.time()
-                    logging.info('Fluxo baixo na B -> voltando para A')
-
-        # Emite atualizações de contadores
-        socketio.emit('contadores_update', {
-            'carros': self.car_count,
-            'pedestres': self.pedestrian_count
-        })
-
-    def status_payload(self):
-        return {
-            'semaforo': self.current_light,
-            'carros': self.car_count,
-            'pedestres': self.pedestrian_count,
-            'modo': 'manual' if self.manual_mode else 'auto',
-            'amarelo': self.yellow_blink
-        }
-
-    def capture_camera_b_loop(self):
-        camera = self.cameras['B']
-        while self.running.is_set() and camera is not None:
-            success, frame = camera.read()
-            if success and frame is not None:
-                self.frames['B'] = frame
-            else:
-                time.sleep(0.1)
-
-    def detection_loop(self):
-        self.running.set()
-        camera_b_thread = threading.Thread(target=self.capture_camera_b_loop, daemon=True)
-        camera_b_thread.start()
-
-        if not self.load_model():
-            logging.error('Detecção desativada: modelo não carregado')
-
-        self.last_detection_time = time.time()
-        
-        while self.running.is_set():
-            camera_a = self.cameras['A']
-            if camera_a is None or not camera_a.isOpened():
-                time.sleep(0.1)
-                continue
-
-            success, frame = camera_a.read()
-            if not success or frame is None:
-                time.sleep(0.1)
-                continue
-
-            self.frames['A'] = frame.copy()
-            self.frame_counter += 1
-
-            if self.model is not None and self.frame_counter % DETECTION_FRAME_SKIP == 0:
-                try:
-                    cars, pedestrians = self.detect_objects(frame)
-                    self.update_traffic_state(cars, pedestrians)
-                except Exception as error:
-                    logging.warning('Erro na detecção: %s', error)
-
-            time.sleep(1 / FRAME_RATE)
-
-        logging.info('Loop de detecção encerrado')
-
-    def generate_stream(self, via):
-        while self.running.is_set():
-            frame = self.frames[via]
-            if frame is None:
-                time.sleep(1 / FRAME_RATE)
-                continue
-
-            frame_display = frame.copy()
-            success, buffer = cv2.imencode('.jpg', frame_display, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
-            if success:
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n\r\n')
-
-            time.sleep(1 / FRAME_RATE)
-
-    def activate_manual(self):
-        if self.is_changing:
-            logging.warning('Aguardando troca atual finalizar...')
-            return
-            
-        self.manual_mode = True
-        self.stop_normal_cycle()
-        logging.info('Modo manual ativado')
-        socketio.emit('status_update', self.status_payload())
-
-    def set_manual_light(self, via):
-        if self.manual_mode and via in ['A', 'B'] and not self.is_changing:
-            self.manual_light = via
-            self.change_light(via)
-            self.stop_normal_cycle()
-
-    def activate_auto(self):
-        if self.is_changing:
-            logging.warning('Aguardando troca atual finalizar...')
-            return
-            
-        self.manual_mode = False
-        self.yellow_blink = False
-        self.in_normal_cycle = False
-        self.last_detection_time = time.time()
-        logging.info('Modo automático ativado')
-        socketio.emit('status_update', self.status_payload())
-
-
-controller = TrafficController()
+            x1, y1, x2, y2 = config.pixel_roi(frame)
+            cv2.rectangle(frame, (x1, y1), (x2 - 1, y2 - 1), (0, 205, 254), 2)
+        success, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        if success:
+            yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n'
+                   + buffer.tobytes() + b'\r\n')
+        time.sleep(1 / config.fps)
 
 
 @app.route('/')
 def index():
-    return render_template('index.html')
-
-
-@app.route('/video_feed/<via>')
-def video_feed(via):
-    via = via.upper()
-    if via not in ('A', 'B'):
-        return 'Via inválida', 404
-    return Response(controller.generate_stream(via), mimetype='multipart/x-mixed-replace; boundary=frame')
+    return render_template('index.html', via=config.observed_road,
+                           outra_via='B' if config.observed_road == 'A' else 'A')
 
 
 @app.route('/video_feed')
-def video_feed_a():
-    return Response(controller.generate_stream('A'), mimetype='multipart/x-mixed-replace; boundary=frame')
+@app.route('/video_feed/<via>')
+def video_feed(via=None):
+    if via is not None and via.upper() != config.observed_road:
+        return 'Esta via não possui câmera configurada.', 404
+    return Response(generate_stream(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+
+@app.route('/status')
+def status():
+    return status_payload()
+
+
+@app.post('/semaforo/manual')
+def manual_command():
+    data = request.get_json(silent=True)
+    result = controller.request_change(data.get('via') if isinstance(data, dict) else None)
+    return result, 200 if result['ok'] else 400
+
+
+@app.post('/semaforo/modo')
+def change_mode():
+    data = request.get_json(silent=True)
+    result = controller.set_mode(data.get('modo') if isinstance(data, dict) else None)
+    return result, 200 if result['ok'] else 400
 
 
 @socketio.on('connect')
 def handle_connect():
-    logging.info('Cliente conectado')
-    emit('status_inicial', controller.status_payload())
+    emit('status_inicial', status_payload())
+
+
+@socketio.on('alternar_semaforo_manual')
+def handle_manual(data):
+    via = data.get('via') if isinstance(data, dict) else None
+    result = controller.request_change(via)
+    emit('comando_resultado', result)
+    return result
 
 
 @socketio.on('ativar_manual')
 def handle_ativar_manual():
-    controller.activate_manual()
+    emit('comando_resultado', controller.set_mode('manual'))
 
 
 @socketio.on('ativar_auto')
 def handle_ativar_auto():
-    controller.activate_auto()
+    emit('comando_resultado', controller.set_mode('automatico'))
 
 
-@socketio.on('alternar_semaforo_manual')
-def handle_alternar_manual(data):
-    if controller.manual_mode:
-        via = data.get('via')
-        controller.set_manual_light(via)
+def publish_status(stop_event):
+    while not stop_event.is_set():
+        socketio.emit('status_update', status_payload())
+        stop_event.wait(0.5)
+
+
+def main():
+    stop_event = threading.Event()
+    publisher = None
+    try:
+        monitor.start()
+        controller.connect()
+        ingestion.start()
+        publisher = threading.Thread(target=publish_status, args=(stop_event,), daemon=True)
+        publisher.start()
+        logging.info('Via observada: %s. Interface: http://localhost:5000', config.observed_road)
+        socketio.run(app, host='0.0.0.0', port=5000, debug=False, use_reloader=False)
+    finally:
+        stop_event.set()
+        if publisher:
+            publisher.join(timeout=2)
+        controller.stop()
+        monitor.stop()
+        ingestion.stop()
 
 
 if __name__ == '__main__':
-    logging.info('Iniciando semáforo inteligente')
-    controller.connect_arduino()
-
-    if not controller.initialize_cameras():
-        logging.warning('Nenhuma câmera encontrada')
-
-    thread_deteccao = threading.Thread(target=controller.detection_loop, daemon=True)
-    thread_deteccao.start()
-
-    logging.info('Servidor web iniciado em: http://localhost:5000')
-    socketio.run(app, host='0.0.0.0', port=5000, debug=False)
+    main()

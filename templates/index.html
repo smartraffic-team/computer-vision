@@ -2,592 +2,232 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Semáforo Inteligente</title>
-    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SmartTraffic · Monitoramento local</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #1C1C1E;
-            color: #E2E5DE;
-            height: 100vh;
-            overflow: hidden;
-        }
-
-        /* Container principal - layout dividido */
-        .dashboard {
-            display: flex;
-            height: 100vh;
-            width: 100%;
-        }
-
-        /* Lado esquerdo - Camera (50% da tela) */
-        .camera-section {
-            flex: 1;
-            background-color: #000000;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-right: 3px solid #FECD0A;
-            overflow: hidden;
-            padding: 12px;
-        }
-
-        .video-container {
-            width: 100%;
-            height: 100%;
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 12px;
-            background-color: #000000;
-        }
-
-        .camera-feed {
-            min-width: 0;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-        }
-
-        .camera-feed h2 {
-            color: #FECD0A;
-            font-size: 16px;
-            text-align: center;
-        }
-
-        .camera-feed img {
-            max-width: 100%;
-            max-height: calc(100% - 32px);
-            width: auto;
-            height: auto;
-            object-fit: contain;
-        }
-
-        /* Lado direito - Painel de Controle (50% da tela) */
-        .control-panel {
-            flex: 1;
-            background-color: #1C1C1E;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            padding: 40px;
-            gap: 25px;
-            overflow-y: auto;
-        }
-
-        /* Cards de contadores */
-        .counters {
-            display: flex;
-            gap: 20px;
-            justify-content: space-between;
-        }
-
-        .counter-card {
-            flex: 1;
-            background-color: #2c2c2e;
-            border-radius: 12px;
-            padding: 20px 15px;
-            text-align: center;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-
-        .counter-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        }
-
-        .counter-label {
-            font-size: 13px;
-            text-transform: uppercase;
-            letter-spacing: 1.5px;
-            color: #FECD0A;
-            margin-bottom: 12px;
-            font-weight: 600;
-        }
-
-        .counter-value {
-            font-size: 48px;
-            font-weight: bold;
-            color: #E2E5DE;
-        }
-
-        /* Card do semáforo */
-        .semaforo-card {
-            background-color: #2c2c2e;
-            border-radius: 12px;
-            padding: 20px;
-        }
-
-        .section-title {
-            font-size: 14px;
-            font-weight: 600;
-            margin-bottom: 15px;
-            color: #FECD0A;
-            text-transform: uppercase;
-            letter-spacing: 1.5px;
-            text-align: center;
-        }
-
-        .status-semaforo {
-            display: flex;
-            justify-content: space-around;
-            gap: 15px;
-        }
-
-        .via-status {
-            flex: 1;
-            text-align: center;
-            padding: 15px;
-            border-radius: 10px;
-            background-color: #1C1C1E;
-            transition: all 0.3s ease;
-            cursor: pointer;
-        }
-
-        .via-status.ativo {
-            background-color: #2c2c2e;
-            border: 2px solid #FECD0A;
-            box-shadow: 0 0 10px rgba(254, 205, 10, 0.2);
-        }
-
-        .via-status.clickable {
-            cursor: pointer;
-        }
-
-        .via-status.clickable:hover {
-            transform: scale(1.02);
-            background-color: #3c3c3e;
-        }
-
-        .via-label {
-            font-size: 18px;
-            font-weight: bold;
-            margin-bottom: 12px;
-        }
-
-        .luz {
-            width: 60px;
-            height: 60px;
-            border-radius: 50%;
-            margin: 0 auto 8px;
-            transition: all 0.2s ease;
-        }
-
-        .luz-vermelha {
-            background-color: #3a0000;
-            border: 2px solid #550000;
-        }
-
-        .luz-vermelha.acesa {
-            background-color: #ff0000;
-            box-shadow: 0 0 20px #ff0000;
-            border-color: #ff4444;
-        }
-
-        .luz-amarela {
-            background-color: #3a3000;
-            border: 2px solid #554400;
-        }
-
-        .luz-amarela.acesa {
-            background-color: #ffcc00;
-            box-shadow: 0 0 20px #ffcc00;
-            border-color: #ffdd44;
-        }
-
-        .luz-verde {
-            background-color: #003300;
-            border: 2px solid #005500;
-        }
-
-        .luz-verde.acesa {
-            background-color: #00ff00;
-            box-shadow: 0 0 20px #00ff00;
-            border-color: #44ff44;
-        }
-
-        .status-texto {
-            font-size: 13px;
-            margin-top: 8px;
-            color: #a0a3a0;
-            font-weight: 600;
-        }
-
-        .via-status.ativo .status-texto {
-            color: #FECD0A;
-        }
-
-        /* Botões de modo */
-        .modos-container {
-            display: flex;
-            gap: 12px;
-        }
-
-        .btn-modo {
-            flex: 1;
-            padding: 12px 15px;
-            border: 2px solid #FECD0A;
-            border-radius: 8px;
-            font-size: 13px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            background-color: #2c2c2e;
-            color: #E2E5DE;
-        }
-
-        .btn-modo.ativo {
-            background-color: #FECD0A;
-            color: #1C1C1E;
-            border-color: #FECD0A;
-        }
-
-        .btn-modo:hover {
-            transform: scale(1.02);
-        }
-
-        .btn-modo:active {
-            transform: scale(0.98);
-        }
-
-        /* Scrollbar customizada */
-        .control-panel::-webkit-scrollbar {
-            width: 6px;
-        }
-
-        .control-panel::-webkit-scrollbar-track {
-            background: #1C1C1E;
-        }
-
-        .control-panel::-webkit-scrollbar-thumb {
-            background: #FECD0A;
-            border-radius: 3px;
-        }
-
-        /* Responsividade */
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', sans-serif; background: #1C1C1E; color: #E2E5DE; }
+        .dashboard { min-height: 100vh; display: grid; grid-template-columns: 1fr 1fr; }
+        .camera-section { background: #000; border-right: 3px solid #FECD0A; padding: 24px;
+            display: flex; flex-direction: column; justify-content: center; gap: 18px; min-width: 0; }
+        h1 { font-size: 24px; }
+        h2 { color: #FECD0A; font-size: 17px; }
+        .video-container { position: relative; aspect-ratio: 4/3; background: #141414;
+            display: grid; place-items: center; overflow: hidden; border-radius: 8px; }
+        .video-container img { width: 100%; height: 100%; object-fit: contain; }
+        .video-container img[hidden], [hidden] { display: none; }
+        #videoMessage { padding: 24px; text-align: center; }
+        .control-panel { padding: 32px; display: flex; flex-direction: column;
+            justify-content: center; gap: 22px; min-width: 0; }
+        .counters, .roads, .manual-buttons { display: flex; gap: 16px; }
+        .card { padding: 20px; background: #2c2c2e; border-radius: 12px; }
+        .counters .card, .roads .card { flex: 1; text-align: center; min-width: 0; }
+        .counter-label { color: #FECD0A; font-size: 14px; }
+        .counter-value { font-size: 48px; font-weight: bold; }
+        .muted { color: #b7b7b7; font-size: 14px; line-height: 1.6; }
+        .status-row { display: flex; flex-wrap: wrap; gap: 10px; }
+        .badge { padding: 6px 10px; background: #2c2c2e; border-radius: 6px; font-size: 14px; }
+        .signal { display: flex; justify-content: center; gap: 8px; margin: 16px 0; }
+        .light { width: 24px; height: 24px; border-radius: 50%; background: #555; opacity: .3; }
+        .light.green.on { background: #36d86c; opacity: 1; }
+        .light.yellow.on { background: #FECD0A; opacity: 1; }
+        .light.red.on { background: #ff4949; opacity: 1; }
+        button { flex: 1; padding: 12px; border: 1px solid #FECD0A; border-radius: 8px;
+            background: #2c2c2e; color: #FECD0A; font: inherit; cursor: pointer; }
+        button:disabled { opacity: .4; cursor: not-allowed; }
+        #commandMessage { min-height: 24px; margin-top: 10px; }
         @media (max-width: 900px) {
-            .control-panel {
-                padding: 25px;
-                gap: 20px;
-            }
-            
-            .counter-value {
-                font-size: 36px;
-            }
-            
-            .luz {
-                width: 45px;
-                height: 45px;
-            }
-            
-            .via-label {
-                font-size: 16px;
-            }
-        }
-
-        @media (max-width: 768px) {
-            .dashboard {
-                flex-direction: column;
-            }
-            
-            .camera-section {
-                flex: 1;
-                min-height: 40vh;
-                border-right: none;
-                border-bottom: 3px solid #FECD0A;
-            }
-            
-            .control-panel {
-                flex: 1;
-                padding: 20px;
-                gap: 15px;
-            }
-            
-            .counter-value {
-                font-size: 32px;
-            }
-            
-            .luz {
-                width: 40px;
-                height: 40px;
-            }
+            .dashboard { grid-template-columns: 1fr; }
+            .camera-section { border-right: 0; border-bottom: 3px solid #FECD0A; }
+            .control-panel { padding: 24px; }
         }
     </style>
 </head>
 <body>
-    <div class="dashboard">
-        <!-- Lado esquerdo: Camera -->
-        <div class="camera-section">
+    <main class="dashboard">
+        <section class="camera-section" aria-label="Câmera da via observada">
+            <h1>Monitoramento local</h1>
+            <h2>Via {{ via }} · Câmera configurada</h2>
             <div class="video-container">
-                <div class="camera-feed">
-                    <h2>VIA A · Webcam do notebook</h2>
-                    <img id="videoFeedA" src="{{ url_for('video_feed', via='A') }}" alt="Webcam da Via A">
-                </div>
-                <div class="camera-feed">
-                    <h2>VIA B · Webcam externa</h2>
-                    <img id="videoFeedB" src="{{ url_for('video_feed', via='B') }}" alt="Webcam da Via B">
-                </div>
+                <img id="videoFeed" src="{{ url_for('video_feed') }}" alt="Imagem da Via {{ via }}" hidden>
+                <p id="videoMessage">Aguardando imagem da câmera…</p>
             </div>
-        </div>
-
-        <!-- Lado direito: Painel de Controle -->
-        <div class="control-panel">
-            <!-- Contadores -->
-            <div class="counters">
-                <div class="counter-card">
+            <div class="status-row" aria-live="polite">
+                <span id="cameraStatus" class="badge">Câmera: aguardando</span>
+                <span id="detectionStatus" class="badge">Detecção: aguardando</span>
+            </div>
+            <p class="muted">O retângulo amarelo delimita a área de contagem da Via {{ via }}.
+                Posicione a câmera para que essa área contenha somente a via observada.</p>
+            <p class="muted">Caixas verdes: pessoas. Caixas azuis: carros. Os rótulos mostram a confiança
+                do modelo. A imagem marcada atualiza a cada detecção concluída.</p>
+        </section>
+        <section class="control-panel" aria-label="Contagens e comandos">
+            <div>
+                <h2>Contagem instantânea · Via {{ via }}</h2>
+                <p class="muted">Objetos visíveis na área delimitada. Cada leitura substitui a anterior.</p>
+            </div>
+            <div class="counters" aria-live="polite">
+                <div class="card">
                     <div class="counter-label">CARROS</div>
-                    <div class="counter-value" id="contadorCarros">0</div>
+                    <div class="counter-value" id="contadorCarros">—</div>
                 </div>
-                <div class="counter-card">
-                    <div class="counter-label">PEDESTRES</div>
-                    <div class="counter-value" id="contadorPedestres">0</div>
+                <div class="card">
+                    <div class="counter-label">PESSOAS</div>
+                    <div class="counter-value" id="contadorPessoas">—</div>
                 </div>
             </div>
-
-            <!-- Status do Semaforo -->
-            <div class="semaforo-card">
-                <div class="section-title">ESTADO DO SEMAFORO</div>
-                <div class="status-semaforo">
-                    <div class="via-status" id="viaAStatus">
-                        <div class="via-label">VIA A</div>
-                        <div class="luz luz-verde" id="luzAVerde"></div>
-                        <div class="luz luz-amarela" id="luzAAmarela"></div>
-                        <div class="luz luz-vermelha" id="luzAVermelha"></div>
-                        <div class="status-texto" id="viaATexto">FECHADO</div>
+            <p class="muted" id="lastReading">Aguardando uma medição válida.</p>
+            <p class="muted" id="ingestionStatus" role="status">Envio à API: aguardando estado.</p>
+            <div class="roads">
+                <div class="card"><h2>Via {{ via }}</h2><p id="observedStatus" class="muted">Aguardando medição</p></div>
+                <div class="card"><h2>Via {{ outra_via }}</h2><p class="muted">Sem medição · sem câmera</p></div>
+            </div>
+            <div class="card">
+                <h2>Comandos manuais · Arduino</h2>
+                <p id="arduinoStatus" class="muted">Aguardando conexão.</p>
+                <p class="muted">Estados informados pelo firmware; não há sensores de confirmação elétrica dos LEDs.
+                    No modo manual, o limite de 25 segundos de verde mantém o atendimento das duas vias.</p>
+                <p id="controlStatus" class="muted">Aguardando estado do controlador.</p>
+                <p id="phaseTime" class="muted"></p>
+                <div class="manual-buttons">
+                    <button data-modo="automatico" disabled>Automático</button>
+                    <button data-modo="manual" disabled>Manual</button>
+                </div>
+                <div class="roads">
+                    {% for road in ['A', 'B'] %}
+                    <div>
+                        <div class="signal" aria-hidden="true">
+                            <span id="green{{ road }}" class="light green"></span>
+                            <span id="yellow{{ road }}" class="light yellow"></span>
+                            <span id="red{{ road }}" class="light red"></span>
+                        </div>
+                        <p id="signal{{ road }}" class="muted">Via {{ road }}: sem informação</p>
                     </div>
-                    <div class="via-status" id="viaBStatus">
-                        <div class="via-label">VIA B</div>
-                        <div class="luz luz-verde" id="luzBVerde"></div>
-                        <div class="luz luz-amarela" id="luzAAmarelaB"></div>
-                        <div class="luz luz-vermelha" id="luzBVermelha"></div>
-                        <div class="status-texto" id="viaBTexto">FECHADO</div>
-                    </div>
+                    {% endfor %}
                 </div>
+                <div class="manual-buttons">
+                    <button data-via="A" disabled>Enviar comando A</button>
+                    <button data-via="B" disabled>Enviar comando B</button>
+                </div>
+                <p id="commandMessage" class="muted" role="status"></p>
             </div>
-
-            <!-- Botões de Modo -->
-            <div class="modos-container">
-                <button class="btn-modo" id="btnManual">
-                    MODO MANUAL
-                </button>
-                <button class="btn-modo" id="btnAuto">
-                    MODO AUTOMATICO
-                </button>
-            </div>
-        </div>
-    </div>
-
+        </section>
+    </main>
     <script>
-        // Conectar ao Socket.IO
-        const socket = io();
+        const video = document.getElementById('videoFeed');
+        const videoMessage = document.getElementById('videoMessage');
+        const buttons = document.querySelectorAll('button[data-via]');
+        const modeButtons = document.querySelectorAll('button[data-modo]');
+        const controls = document.querySelectorAll('button');
+        const cameraLabels = {iniciando: 'Iniciando', conectada: 'Conectada',
+            desconectada: 'Desconectada · tentando reconectar', sem_imagem: 'Sem imagem recente'};
+        const detectionLabels = {carregando: 'Carregando modelo', pronto: 'Pronta',
+            erro: 'Erro · consulte o terminal', aguardando: 'Aguardando leitura',
+            ativa: 'Ativa', desatualizada: 'Leitura antiga', indisponivel: 'Indisponível'};
+        let commandPending = false;
+        const setText = (id, value) => { document.getElementById(id).textContent = value; };
 
-        // Elementos DOM
-        const contadorCarrosEl = document.getElementById('contadorCarros');
-        const contadorPedestresEl = document.getElementById('contadorPedestres');
-        const btnManual = document.getElementById('btnManual');
-        const btnAuto = document.getElementById('btnAuto');
-        
-        // Elementos do semaforo via A
-        const viaAStatus = document.getElementById('viaAStatus');
-        const luzAVerde = document.getElementById('luzAVerde');
-        const luzAAmarela = document.getElementById('luzAAmarela');
-        const luzAVermelha = document.getElementById('luzAVermelha');
-        const viaATexto = document.getElementById('viaATexto');
-        
-        // Elementos do semaforo via B
-        const viaBStatus = document.getElementById('viaBStatus');
-        const luzBVerde = document.getElementById('luzBVerde');
-        const luzAAmarelaB = document.getElementById('luzAAmarelaB');
-        const luzBVermelha = document.getElementById('luzBVermelha');
-        const viaBTexto = document.getElementById('viaBTexto');
-
-        let currentMode = 'auto';
-        let currentLight = 'A';
-        let blinkIntervalA = null;
-        let blinkIntervalB = null;
-
-        // Função para atualizar o semáforo na interface
-        function atualizarSemaforo(via) {
-            if (via === 'A') {
-                // Via A verde, via B vermelho
-                luzAVerde.classList.add('acesa');
-                // Garante que amarelo está apagado
-                luzAAmarela.classList.remove('acesa');
-                luzAVermelha.classList.remove('acesa');
-                viaATexto.textContent = 'LIBERADO';
-                viaAStatus.classList.add('ativo');
-                
-                luzBVerde.classList.remove('acesa');
-                luzAAmarelaB.classList.remove('acesa');
-                luzBVermelha.classList.add('acesa');
-                viaBTexto.textContent = 'FECHADO';
-                viaBStatus.classList.remove('ativo');
-            } else if (via === 'B') {
-                // Via B verde, via A vermelho
-                luzAVerde.classList.remove('acesa');
-                luzAAmarela.classList.remove('acesa');
-                luzAVermelha.classList.add('acesa');
-                viaATexto.textContent = 'FECHADO';
-                viaAStatus.classList.remove('ativo');
-                
-                luzBVerde.classList.add('acesa');
-                luzAAmarelaB.classList.remove('acesa');
-                luzBVermelha.classList.remove('acesa');
-                viaBTexto.textContent = 'LIBERADO';
-                viaBStatus.classList.add('ativo');
-            }
-        }
-
-        // Função para piscar amarelo na web sincronizado com o Arduino
-        function piscarAmareloWeb(via, action) {
-            if (via === 'A') {
-                if (action === 'on') {
-                    luzAAmarela.classList.add('acesa');
-                } else if (action === 'off') {
-                    luzAAmarela.classList.remove('acesa');
-                } else if (action === 'start') {
-                    // Para qualquer pisca anterior
-                    if (blinkIntervalA) clearInterval(blinkIntervalA);
-                    
-                    let count = 0;
-                    blinkIntervalA = setInterval(() => {
-                        if (count >= 6) { // 3 piscadas completas
-                            clearInterval(blinkIntervalA);
-                            blinkIntervalA = null;
-                            luzAAmarela.classList.remove('acesa');
-                        } else {
-                            if (luzAAmarela.classList.contains('acesa')) {
-                                luzAAmarela.classList.remove('acesa');
-                            } else {
-                                luzAAmarela.classList.add('acesa');
-                            }
-                            count++;
-                        }
-                    }, 500);
+        function render(data) {
+            const ingestion = data.ingestao || {};
+            setText('ingestionStatus', ingestion.habilitada
+                ? 'API: ' + (ingestion.erro || 'envio em segundo plano')
+                    + ' · fila: ' + ingestion.pendentes + ' · pausados: ' + ingestion.pausados
+                    + (ingestion.ultimo_envio ? ' · último envio: ' + new Date(ingestion.ultimo_envio).toLocaleTimeString('pt-BR') : '')
+                : 'Envio à API desativado' + (ingestion.erro ? ' · ' + ingestion.erro : ''));
+            setText('cameraStatus', 'Câmera: ' + (cameraLabels[data.camera] || data.camera));
+            setText('detectionStatus', 'Detecção: ' + (detectionLabels[data.deteccao] || data.deteccao));
+            setText('contadorCarros', data.medicao_valida ? data.carros : '—');
+            setText('contadorPessoas', data.medicao_valida ? data.pedestres : '—');
+            setText('observedStatus', data.medicao_valida ? 'Medição disponível' : 'Medição indisponível');
+            setText('lastReading', data.registrado_em
+                ? (data.medicao_valida ? 'Quadro medido em: ' : 'Última leitura, sem validade atual: ')
+                    + new Date(data.registrado_em).toLocaleString('pt-BR')
+                : 'Aguardando uma medição válida.');
+            video.hidden = data.camera !== 'conectada';
+            videoMessage.hidden = !video.hidden;
+            videoMessage.textContent = cameraLabels[data.camera] || 'Sem imagem';
+            setText('arduinoStatus', data.arduino_conectado
+                ? 'Arduino comunicando · estado recente recebido'
+                : data.erro_controle || 'Aguardando firmware ST1 · captura e contagem continuam');
+            const strategy = data.estrategia === 'adaptativo' ? 'adaptativo pela contagem de carros'
+                : 'ciclo fixo · sem medição válida';
+            setText('controlStatus', 'Modo solicitado: ' + data.modo + ' · Arduino: '
+                + (data.modo_arduino || 'sem informação')
+                + (data.modo === 'automatico' ? ' · ' + strategy : '')
+                + (data.aviso_controle ? ' · ' + data.aviso_controle : ''));
+            setText('phaseTime', data.tempo_restante == null ? ''
+                : 'Fase: ' + data.fase + ' · tempo restante estimado: '
+                    + data.tempo_restante.toFixed(1) + ' s'
+                    + (data.comando_pendente ? ' · aguardando confirmação' : ''));
+            for (const road of ['A', 'B']) {
+                const signal = data.arduino_conectado ? data.sinais[road] : null;
+                for (const [color, label] of [['green', 'verde'], ['yellow', 'amarelo'], ['red', 'vermelho']]) {
+                    document.getElementById(color + road).classList.toggle('on', signal === label);
                 }
-            } else if (via === 'B') {
-                if (action === 'on') {
-                    luzAAmarelaB.classList.add('acesa');
-                } else if (action === 'off') {
-                    luzAAmarelaB.classList.remove('acesa');
-                } else if (action === 'start') {
-                    // Para qualquer pisca anterior
-                    if (blinkIntervalB) clearInterval(blinkIntervalB);
-                    
-                    let count = 0;
-                    blinkIntervalB = setInterval(() => {
-                        if (count >= 6) { // 3 piscadas completas
-                            clearInterval(blinkIntervalB);
-                            blinkIntervalB = null;
-                            luzAAmarelaB.classList.remove('acesa');
-                        } else {
-                            if (luzAAmarelaB.classList.contains('acesa')) {
-                                luzAAmarelaB.classList.remove('acesa');
-                            } else {
-                                luzAAmarelaB.classList.add('acesa');
-                            }
-                            count++;
-                        }
-                    }, 500);
-                }
+                setText('signal' + road, 'Via ' + road + ': ' + (signal || 'sem informação'));
             }
+            const busy = commandPending || !data.arduino_conectado || data.comando_pendente;
+            buttons.forEach(button => {
+                button.disabled = busy || data.em_transicao || data.modo !== 'manual';
+            });
+            modeButtons.forEach(button => {
+                button.disabled = busy || data.modo === button.dataset.modo;
+                button.setAttribute('aria-pressed', String(data.modo === button.dataset.modo));
+            });
         }
 
-        // Função para atualizar contadores
-        function atualizarContadores(carros, pedestres) {
-            contadorCarrosEl.textContent = carros;
-            contadorPedestresEl.textContent = pedestres;
+        function unavailable() {
+            setText('ingestionStatus', 'Envio à API: sem atualização do servidor local');
+            setText('cameraStatus', 'Servidor sem resposta');
+            setText('detectionStatus', 'Detecção: sem atualização');
+            setText('contadorCarros', '—');
+            setText('contadorPessoas', '—');
+            setText('observedStatus', 'Medição indisponível');
+            setText('lastReading', 'Conexão com a aplicação local indisponível.');
+            setText('arduinoStatus', 'Conexão indisponível');
+            controls.forEach(button => { button.disabled = true; });
+            setText('controlStatus', 'Estado do controlador indisponível');
+            setText('phaseTime', '');
+            document.querySelectorAll('.light').forEach(light => light.classList.remove('on'));
+            for (const road of ['A', 'B']) setText('signal' + road, 'Via ' + road + ': sem informação');
+            video.hidden = true;
+            videoMessage.hidden = false;
+            videoMessage.textContent = 'Aguardando conexão com o servidor…';
         }
 
-        // Função para atualizar o modo nos botões
-        function atualizarModoUI(modo) {
-            if (modo === 'auto') {
-                btnAuto.classList.add('ativo');
-                btnManual.classList.remove('ativo');
-                currentMode = 'auto';
-                // Remove cursor pointer dos cards no modo automático
-                viaAStatus.classList.remove('clickable');
-                viaBStatus.classList.remove('clickable');
-            } else if (modo === 'manual') {
-                btnManual.classList.add('ativo');
-                btnAuto.classList.remove('ativo');
-                currentMode = 'manual';
-                // Adiciona cursor pointer nos cards no modo manual
-                viaAStatus.classList.add('clickable');
-                viaBStatus.classList.add('clickable');
-            }
+        async function pollStatus() {
+            const abort = new AbortController();
+            const timeout = setTimeout(() => abort.abort(), 2000);
+            try {
+                const response = await fetch('/status', {cache: 'no-store', signal: abort.signal});
+                if (!response.ok) throw new Error('Status indisponível');
+                render(await response.json());
+            } catch (_) { unavailable(); }
+            finally { clearTimeout(timeout); setTimeout(pollStatus, 500); }
         }
 
-        // Socket events
-        socket.on('connect', function() {
-            console.log('Conectado ao servidor');
+        controls.forEach(button => button.addEventListener('click', async () => {
+            commandPending = true;
+            controls.forEach(item => { item.disabled = true; });
+            const abort = new AbortController();
+            const timeout = setTimeout(() => abort.abort(), 3000);
+            try {
+                const changingMode = !!button.dataset.modo;
+                const response = await fetch(changingMode ? '/semaforo/modo' : '/semaforo/manual', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(changingMode ? {modo: button.dataset.modo} : {via: button.dataset.via}), signal: abort.signal
+                });
+                const result = await response.json();
+                setText('commandMessage', result.ok
+                    ? 'Solicitação recebida. Acompanhe o estado informado pelo Arduino.'
+                    : result.erro || 'Comando não aceito.');
+            } catch (_) { setText('commandMessage', 'Falha de comunicação; consulte o estado antes de repetir.'); }
+            finally { clearTimeout(timeout); commandPending = false; }
+        }));
+        video.addEventListener('error', () => {
+            setTimeout(() => { video.src = '/video_feed?t=' + Date.now(); }, 2000);
         });
-
-        socket.on('status_inicial', function(data) {
-            currentLight = data.semaforo;
-            atualizarSemaforo(data.semaforo);
-            atualizarContadores(data.carros, data.pedestres);
-            atualizarModoUI(data.modo);
-        });
-
-        socket.on('status_update', function(data) {
-            currentLight = data.semaforo;
-            atualizarSemaforo(data.semaforo);
-            atualizarContadores(data.carros, data.pedestres);
-            atualizarModoUI(data.modo);
-        });
-
-        socket.on('contadores_update', function(data) {
-            contadorCarrosEl.textContent = data.carros;
-            contadorPedestresEl.textContent = data.pedestres;
-        });
-
-        // Evento para sincronizar o amarelo da web com o Arduino
-        socket.on('yellow_blink_web', function(data) {
-            console.log('Recebido yellow_blink_web:', data);
-            piscarAmareloWeb(data.via, data.state);
-        });
-
-        // Eventos dos botões
-        btnManual.addEventListener('click', function() {
-            console.log('Alternando para modo manual');
-            socket.emit('ativar_manual');
-        });
-
-        btnAuto.addEventListener('click', function() {
-            console.log('Alternando para modo automático');
-            socket.emit('ativar_auto');
-        });
-
-        // Eventos dos cards (seleção manual do semáforo)
-        viaAStatus.addEventListener('click', function() {
-            if (currentMode === 'manual') {
-                console.log('Selecionado via A manualmente');
-                socket.emit('alternar_semaforo_manual', { via: 'A' });
-            }
-        });
-
-        viaBStatus.addEventListener('click', function() {
-            if (currentMode === 'manual') {
-                console.log('Selecionado via B manualmente');
-                socket.emit('alternar_semaforo_manual', { via: 'B' });
-            }
-        });
-
-        // Inicializar estado padrão (começa com A vermelho e B verde? Ajuste conforme necessário)
-        // Estado inicial padrão: Via A Verde, Via B Vermelho
-        luzAVerde.classList.add('acesa');
-        luzBVermelha.classList.add('acesa');
+        pollStatus();
     </script>
 </body>
 </html>
