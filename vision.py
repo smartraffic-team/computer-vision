@@ -20,6 +20,7 @@ class VisionConfig:
     detection_interval: float = 0.3
     stale_after: float = 5.0
     reconnect_interval: float = 2.0
+    stopped_seconds: float = 2.0
     confidence: float = 0.35
     # Retângulo normalizado: esquerda, topo, direita, base.
     roi: tuple = (0.0, 0.0, 1.0, 1.0)
@@ -32,7 +33,8 @@ class VisionConfig:
             raise ValueError('A via observada deve ser A ou B.')
         if self.camera_index < 0 or min(self.width, self.height, self.fps) <= 0:
             raise ValueError('Índice, resolução ou FPS inválidos.')
-        if min(self.detection_interval, self.stale_after, self.reconnect_interval) <= 0:
+        if min(self.detection_interval, self.stale_after, self.reconnect_interval,
+               self.stopped_seconds) <= 0:
             raise ValueError('Os intervalos devem ser positivos.')
         if not 0 < self.confidence <= 1:
             raise ValueError('A confiança deve estar entre 0 e 1.')
@@ -69,6 +71,8 @@ class DetectionResult:
     cars: int
     people: int
     annotated_frame: object
+    car_boxes: tuple = ()
+    visual_boxes: tuple = ()
 
 
 class YoloDetector:
@@ -87,6 +91,8 @@ class YoloDetector:
         )
         annotated = frame.copy()
         cars = people = 0
+        car_boxes = []
+        visual_boxes = []
         for result in results:
             if result.boxes is None:
                 continue
@@ -104,9 +110,12 @@ class YoloDetector:
                     continue
                 cars += label == 'car'
                 people += label == 'person'
+                if label == 'car':
+                    car_boxes.append((left, top, right, bottom))
                 name = 'Carro' if label == 'car' else 'Pessoa'
                 color = (255, 160, 60) if label == 'car' else (80, 210, 80)
                 caption = f'{name} {float(box.conf[0]):.0%}'
+                visual_boxes.append((left, top, right, bottom, caption, color))
                 cv2.rectangle(annotated, (left, top), (right, bottom), color, 2)
                 (text_width, text_height), baseline = cv2.getTextSize(
                     caption, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1,
@@ -117,7 +126,7 @@ class YoloDetector:
                               (text_x + text_width + 6, text_y + baseline + 3), color, -1)
                 cv2.putText(annotated, caption, (text_x + 3, text_y),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
-        return DetectionResult(cars, people, annotated)
+        return DetectionResult(cars, people, annotated, tuple(car_boxes), tuple(visual_boxes))
 
 
 class CameraMonitor:
@@ -137,6 +146,11 @@ class CameraMonitor:
         self._frame_date = None
         self._reading = None
         self._annotated_frame = None
+        self._visual_boxes = ()
+        self._visual_boxes_time = 0.0
+        self._queue_tracks = []
+        self._stopped_cars = 0
+        self._oldest_wait_seconds = 0.0
         self._camera_status = 'iniciando'
         self._model_status = 'carregando'
 
@@ -162,6 +176,11 @@ class CameraMonitor:
             self._frame = None
             self._reading = None
             self._annotated_frame = None
+            self._visual_boxes = ()
+            self._visual_boxes_time = 0.0
+            self._queue_tracks = []
+            self._stopped_cars = 0
+            self._oldest_wait_seconds = 0.0
             self._generation += 1
 
     def _capture_loop(self):
@@ -189,7 +208,6 @@ class CameraMonitor:
                         self._frame_time = self._clock()
                         self._frame_date = datetime.now(timezone.utc).isoformat()
                         self._camera_status = 'conectada'
-                    self._stop.wait(1 / self.config.fps)
             except Exception as error:
                 logging.warning('Captura indisponível: %s', error)
             finally:
@@ -210,17 +228,37 @@ class CameraMonitor:
         return sample[0] if sample else None
 
     def display_frame(self):
-        """Mostra as caixas no quadro analisado, nunca sobre uma imagem posterior."""
+        """Mostra o quadro mais recente com a última detecção válida sobreposta."""
         with self._lock:
             now = self._clock()
             if self._frame is None or now - self._frame_time > self.config.stale_after:
                 return None
+            frame = self._frame.copy()
+            overlay_max_age = min(
+                self.config.stale_after,
+                max(1.0, self.config.detection_interval * 3),
+            )
             if (self._model_status == 'pronto' and self._reading is not None
-                    and now - self._reading[2] <= self.config.stale_after
-                    and self._annotated_frame is not None):
-                return self._annotated_frame.copy()
-            # A captura continua disponível enquanto a detecção carrega/falha/expira.
-            return self._frame.copy()
+                    and now - self._visual_boxes_time <= overlay_max_age):
+                visual_boxes = self._visual_boxes
+            else:
+                visual_boxes = ()
+
+        if visual_boxes:
+            import cv2
+
+            for left, top, right, bottom, caption, color in visual_boxes:
+                cv2.rectangle(frame, (left, top), (right, bottom), color, 2)
+                (text_width, text_height), baseline = cv2.getTextSize(
+                    caption, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1,
+                )
+                text_x = max(0, min(left, frame.shape[1] - text_width - 6))
+                text_y = min(frame.shape[0] - baseline - 3, max(text_height + 6, top - 6))
+                cv2.rectangle(frame, (text_x, text_y - text_height - 4),
+                              (text_x + text_width + 6, text_y + baseline + 3), color, -1)
+                cv2.putText(frame, caption, (text_x + 3, text_y),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
+        return frame
 
     def _detection_loop(self):
         try:
@@ -243,16 +281,60 @@ class CameraMonitor:
                     with self._lock:
                         # Descarta uma inferência que terminou depois de desconexão/reinício.
                         if generation == self._generation and not self._stop.is_set():
-                            self._reading = (detection.cars, detection.people, captured_at, captured_date)
+                            stopped = self._update_queue_tracks(
+                                detection.car_boxes, frame.shape, captured_at,
+                            )
+                            self._reading = (detection.cars, detection.people,
+                                             captured_at, captured_date, stopped)
                             self._annotated_frame = detection.annotated_frame
+                            self._visual_boxes = detection.visual_boxes
+                            self._visual_boxes_time = captured_at
                             self._model_status = 'pronto'
                 except Exception:
                     logging.exception('Falha na detecção; contagem indisponível.')
                     with self._lock:
                         self._reading = None
                         self._annotated_frame = None
+                        self._visual_boxes = ()
                         self._model_status = 'erro'
             self._stop.wait(self.config.detection_interval)
+
+    def _update_queue_tracks(self, boxes, shape, now):
+        """Estimate stopped cars from box-center movement in the configured ROI."""
+        width = shape[1]
+        movement_limit = max(6.0, width * 0.01)
+        match_limit = max(40.0, width * 0.12)
+        tracks = [track for track in self._queue_tracks if now - track['seen'] <= 1.0]
+        used = set()
+        updated = []
+        for box in boxes:
+            x1, y1, x2, y2 = box
+            center = ((x1 + x2) / 2, (y1 + y2) / 2)
+            candidates = [
+                (index, ((track['center'][0] - center[0]) ** 2
+                         + (track['center'][1] - center[1]) ** 2) ** 0.5)
+                for index, track in enumerate(tracks) if index not in used
+            ]
+            candidate = min(candidates, key=lambda item: item[1], default=None)
+            if candidate and candidate[1] <= match_limit:
+                index, distance = candidate
+                used.add(index)
+                track = tracks[index]
+                stable_since = track['stable_since'] if distance <= movement_limit else now
+            else:
+                stable_since = now
+            updated.append({'center': center, 'seen': now, 'stable_since': stable_since})
+        self._queue_tracks = updated
+        self._stopped_cars = sum(
+            now - track['stable_since'] >= self.config.stopped_seconds
+            for track in updated
+        )
+        eligible_waits = [
+            now - track['stable_since'] for track in updated
+            if now - track['stable_since'] >= self.config.stopped_seconds
+        ]
+        self._oldest_wait_seconds = max(eligible_waits, default=0.0)
+        return self._stopped_cars
 
     def snapshot(self):
         with self._lock:
@@ -272,6 +354,8 @@ class CameraMonitor:
             else:
                 detection_status = 'ativa' if valid else 'desatualizada'
             cars, people = (reading[0], reading[1]) if valid else (None, None)
+            stopped_cars = reading[4] if valid and len(reading) > 4 else (0 if valid else None)
+            oldest_wait_seconds = self._oldest_wait_seconds if valid else None
             via = self.config.observed_road
             roads = {road: {'carros': None, 'pedestres': None, 'estado': 'sem_medicao'}
                      for road in ('A', 'B')}
@@ -281,6 +365,10 @@ class CameraMonitor:
                 'via_observada': via, 'camera': camera_status,
                 'deteccao': detection_status, 'medicao_valida': valid,
                 'carros': cars, 'pedestres': people,
+                'veiculos_parados': stopped_cars,
+                'espera_mais_antiga_seg': round(oldest_wait_seconds, 1)
+                    if oldest_wait_seconds is not None else None,
+                'demanda_via_a': via == 'A' and bool(stopped_cars),
                 'registrado_em': reading[3] if reading else None,
                 'vias': roads,
             }

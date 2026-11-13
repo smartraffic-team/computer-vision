@@ -12,6 +12,10 @@
             display: flex; flex-direction: column; justify-content: center; gap: 18px; min-width: 0; }
         h1 { font-size: 24px; }
         h2 { color: #FECD0A; font-size: 17px; }
+        .camera-nav { display: flex; gap: 8px; }
+        .camera-nav a { padding: 8px 12px; border: 1px solid #555; border-radius: 7px;
+            color: #ddd; text-decoration: none; font-size: 13px; }
+        .camera-nav a.active { border-color: #FECD0A; color: #FECD0A; }
         .video-container { position: relative; aspect-ratio: 4/3; background: #141414;
             display: grid; place-items: center; overflow: hidden; border-radius: 8px; }
         .video-container img { width: 100%; height: 100%; object-fit: contain; }
@@ -25,6 +29,7 @@
         .counter-label { color: #FECD0A; font-size: 14px; }
         .counter-value { font-size: 48px; font-weight: bold; }
         .muted { color: #b7b7b7; font-size: 14px; line-height: 1.6; }
+        .road-link { color: #FECD0A; text-decoration: none; }
         .status-row { display: flex; flex-wrap: wrap; gap: 10px; }
         .badge { padding: 6px 10px; background: #2c2c2e; border-radius: 6px; font-size: 14px; }
         .signal { display: flex; justify-content: center; gap: 8px; margin: 16px 0; }
@@ -48,8 +53,12 @@
         <section class="camera-section" aria-label="Câmera da via observada">
             <h1>Monitoramento local</h1>
             <h2>Via {{ via }} · Câmera configurada</h2>
+            <nav class="camera-nav" aria-label="Selecionar câmera">
+                <a href="/camera/A" class="{{ 'active' if via == 'A' else '' }}">Câmera A</a>
+                <a href="/camera/B" class="{{ 'active' if via == 'B' else '' }}">Câmera B</a>
+            </nav>
             <div class="video-container">
-                <img id="videoFeed" src="{{ url_for('video_feed') }}" alt="Imagem da Via {{ via }}" hidden>
+                <img id="videoFeed" src="{{ url_for('video_feed', via=via) }}" alt="Imagem da Via {{ via }}" hidden>
                 <p id="videoMessage">Aguardando imagem da câmera…</p>
             </div>
             <div class="status-row" aria-live="polite">
@@ -77,10 +86,11 @@
                 </div>
             </div>
             <p class="muted" id="lastReading">Aguardando uma medição válida.</p>
+            <p class="muted" id="queueStatus">Aguardando análise da zona de espera.</p>
             <p class="muted" id="ingestionStatus" role="status">Envio à API: aguardando estado.</p>
             <div class="roads">
                 <div class="card"><h2>Via {{ via }}</h2><p id="observedStatus" class="muted">Aguardando medição</p></div>
-                <div class="card"><h2>Via {{ outra_via }}</h2><p class="muted">Sem medição · sem câmera</p></div>
+                <div class="card"><h2><a class="road-link" href="/camera/{{ outra_via }}">Via {{ outra_via }}</a></h2><p id="otherRoadStatus" class="muted">Aguardando estado da outra camera.</p></div>
             </div>
             <div class="card">
                 <h2>Comandos manuais · Arduino</h2>
@@ -114,6 +124,8 @@
         </section>
     </main>
     <script>
+        const observedRoad = '{{ via }}';
+        const feedUrl = '/video_feed/' + observedRoad;
         const video = document.getElementById('videoFeed');
         const videoMessage = document.getElementById('videoMessage');
         const buttons = document.querySelectorAll('button[data-via]');
@@ -128,28 +140,42 @@
         const setText = (id, value) => { document.getElementById(id).textContent = value; };
 
         function render(data) {
+            const lane = (data.vias && data.vias[observedRoad]) || data;
             const ingestion = data.ingestao || {};
             setText('ingestionStatus', ingestion.habilitada
                 ? 'API: ' + (ingestion.erro || 'envio em segundo plano')
                     + ' · fila: ' + ingestion.pendentes + ' · pausados: ' + ingestion.pausados
                     + (ingestion.ultimo_envio ? ' · último envio: ' + new Date(ingestion.ultimo_envio).toLocaleTimeString('pt-BR') : '')
                 : 'Envio à API desativado' + (ingestion.erro ? ' · ' + ingestion.erro : ''));
-            setText('cameraStatus', 'Câmera: ' + (cameraLabels[data.camera] || data.camera));
-            setText('detectionStatus', 'Detecção: ' + (detectionLabels[data.deteccao] || data.deteccao));
-            setText('contadorCarros', data.medicao_valida ? data.carros : '—');
-            setText('contadorPessoas', data.medicao_valida ? data.pedestres : '—');
-            setText('observedStatus', data.medicao_valida ? 'Medição disponível' : 'Medição indisponível');
-            setText('lastReading', data.registrado_em
-                ? (data.medicao_valida ? 'Quadro medido em: ' : 'Última leitura, sem validade atual: ')
-                    + new Date(data.registrado_em).toLocaleString('pt-BR')
+            setText('cameraStatus', 'Câmera: ' + (cameraLabels[lane.camera] || lane.camera));
+            setText('detectionStatus', 'Detecção: ' + (detectionLabels[lane.deteccao] || lane.deteccao));
+            setText('contadorCarros', lane.medicao_valida ? lane.carros : '—');
+            setText('contadorPessoas', lane.medicao_valida ? lane.pedestres : '—');
+            setText('queueStatus', !lane.medicao_valida
+                ? 'Zona de espera: medição indisponível'
+                : (lane.veiculos_parados || 0) + ' veículo(s) parado(s) nesta zona de espera'
+                    + (data.prioridade_via === observedRoad ? ' · prioridade solicitada' : ''));
+            setText('observedStatus', lane.medicao_valida ? 'Medição disponível' : 'Medição indisponível');
+            const otherRoad = observedRoad === 'A' ? 'B' : 'A';
+            const otherLane = data.vias && data.vias[otherRoad];
+            setText('otherRoadStatus', otherLane
+                ? (otherLane.medicao_valida
+                    ? 'Camera ativa · carros: ' + otherLane.carros + ' · pessoas: ' + otherLane.pedestres
+                    : 'Camera ' + (cameraLabels[otherLane.camera] || otherLane.camera))
+                : 'Estado da outra camera indisponivel');
+            setText('lastReading', lane.registrado_em
+                ? (lane.medicao_valida ? 'Quadro medido em: ' : 'Última leitura, sem validade atual: ')
+                    + new Date(lane.registrado_em).toLocaleString('pt-BR')
                 : 'Aguardando uma medição válida.');
-            video.hidden = data.camera !== 'conectada';
+            video.hidden = lane.camera !== 'conectada';
             videoMessage.hidden = !video.hidden;
-            videoMessage.textContent = cameraLabels[data.camera] || 'Sem imagem';
+            videoMessage.textContent = cameraLabels[lane.camera] || 'Sem imagem';
             setText('arduinoStatus', data.arduino_conectado
                 ? 'Arduino comunicando · estado recente recebido'
                 : data.erro_controle || 'Aguardando firmware ST1 · captura e contagem continuam');
-            const strategy = data.estrategia === 'adaptativo' ? 'adaptativo pela contagem de carros'
+            const strategy = data.estrategia === 'prioridade_via_a' ? 'prioridade da Via A por veículo parado'
+                : data.estrategia === 'prioridade_via_b' ? 'prioridade da Via B por veículo parado'
+                : data.estrategia === 'adaptativo' ? 'adaptativo pela contagem de carros'
                 : 'ciclo fixo · sem medição válida';
             setText('controlStatus', 'Modo solicitado: ' + data.modo + ' · Arduino: '
                 + (data.modo_arduino || 'sem informação')
@@ -225,7 +251,7 @@
             finally { clearTimeout(timeout); commandPending = false; }
         }));
         video.addEventListener('error', () => {
-            setTimeout(() => { video.src = '/video_feed?t=' + Date.now(); }, 2000);
+            setTimeout(() => { video.src = feedUrl + '?t=' + Date.now(); }, 2000);
         });
         pollStatus();
     </script>

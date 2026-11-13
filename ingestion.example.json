@@ -3,10 +3,11 @@
   "api_url": "http://127.0.0.1:3000/api/v1",
   "ingestion_key": "",
   "camera_id": "",
+  "camera_b_id": "",
   "arduino_id": "",
   "computer_id": "",
   "signal_a_id": "",
   "signal_b_id": "",
-  "reading_interval": 5,
+  "reading_interval": 1.5,
   "telemetry_interval": 15
 }

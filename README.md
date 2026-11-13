@@ -1,6 +1,6 @@
 # SmartTraffic — visão computacional local
 
-Aplicação de uma webcam para contar **carros e pessoas visíveis** na via configurada e mostrar o vídeo em Flask. O programa principal é **Teste_camera.py**. Smartrafic_web.py é um atalho para a mesma aplicação.
+Aplicacao de duas webcams isoladas, uma para cada via, com contagens e streams independentes. O programa principal e **Teste_camera.py**; Smartrafic_web.py inicia a mesma aplicacao.
 
 ## Executar
 
@@ -13,40 +13,38 @@ Abra **http://localhost:5000**. Encerre com Ctrl+C.
 
 Os caminhos do modelo e do template são relativos aos arquivos Python, portanto também é possível iniciar de outra pasta: python computer-vision/Teste_camera.py.
 
-A aplicação abre somente uma webcam. Captura, detecção, controle serial e publicação de estado usam threads separadas. O YOLO pode carregar ou falhar sem impedir o vídeo. O controle inicia em modo automático e exige o firmware ST1 de `../arduino/arduino_code.ino`; o firmware antigo não é compatível. Encerre o Python e o Monitor Serial antes de carregar o firmware e reinicie o Python depois.
+A aplicacao abre uma captura independente para cada via. Cada CameraMonitor possui seu proprio cv2.VideoCapture, thread de captura, estado, deteccao e reconexao. As duas cameras devem usar indices diferentes.
 
-## Qual via está sendo observada?
+## Mapeamento das cameras
 
-A origem é uma configuração vinculada ao enquadramento da câmera. O YOLO identifica as classes car e person, não o nome da via.
+A via e definida pela configuracao da captura, nao pela classe YOLO. Cada camera tem indice, backend e ROI proprios. O padrao e Via A no indice 1 e Via B no indice 0; confirme o mapeamento no terminal ao iniciar. Os indices devem ser distintos.
 
-- Padrão atual: câmera de índice **0**, observando a **Via A**. O índice depende da enumeração dos dispositivos neste computador.
-- Posicione a câmera para que a área delimitada contenha apenas a via configurada.
-- A outra via aparece como **sem medição**; não recebe a contagem da câmera nem um zero artificial.
-- Se uma câmera mostrar as duas vias, será necessário implementar regiões distintas e atribuição de objetos a cada região. Isso não faz parte desta entrega.
-- Os índices de webcam dependem da enumeração do computador. Se aparecer o dispositivo errado, encerre a aplicação, altere o índice e reinicie.
-
+Se houver webcams adicionais, defina explicitamente os indices que correspondem a cada aproximacao. A regiao de interesse de cada camera deve conter somente a respectiva via.
 ## Configuração no PowerShell
 
-Exemplo para usar a webcam de índice 1 observando A e preservar a porta COM5:
+Exemplo no PowerShell (ajuste os indices se necessario):
 
-    $env:SMARTTRAFFIC_CAMERA_INDEX='1'
-    $env:SMARTTRAFFIC_OBSERVED_ROAD='A'
+    $env:SMARTTRAFFIC_CAMERA_A_INDEX='1'
+    $env:SMARTTRAFFIC_CAMERA_B_INDEX='0'
     $env:SMARTTRAFFIC_ARDUINO_PORT='COM5'
     python Teste_camera.py
 
-Para observar B, configure SMARTTRAFFIC_OBSERVED_ROAD como B antes de iniciar. Reinicie a aplicação ao alterar configurações.
+Para observar as duas vias em Flask, abra **/** (Via A) e use os links **Camera A / Camera B** para conferir cada captura. Os streams estao em **/video_feed/A** e **/video_feed/B**.
 
 | Variável | Padrão | Finalidade |
 |---|---|---|
-| SMARTTRAFFIC_CAMERA_INDEX | 0 | Índice da única webcam aberta |
-| SMARTTRAFFIC_CAMERA_BACKEND | DSHOW no Windows; AUTO nos demais | Backend de captura: DSHOW, MSMF ou AUTO |
-| SMARTTRAFFIC_OBSERVED_ROAD | A | Via à qual pertencem as medições: A ou B |
+| SMARTTRAFFIC_CAMERA_A_INDEX | SMARTTRAFFIC_CAMERA_INDEX or 1 | Index da webcam A |
+| SMARTTRAFFIC_CAMERA_BACKEND | DSHOW no Windows; AUTO nos demais | Backend padrao: DSHOW, MSMF ou AUTO |
+| SMARTTRAFFIC_CAMERA_A_BACKEND / SMARTTRAFFIC_CAMERA_B_BACKEND | Backend global | Backend individual opcional para cada webcam |
+| SMARTTRAFFIC_CAMERA_B_INDEX | 0 | Index da webcam B; deve ser diferente do indice A |
 | SMARTTRAFFIC_FRAME_WIDTH / SMARTTRAFFIC_FRAME_HEIGHT | 640 / 480 | Resolução solicitada à câmera |
 | SMARTTRAFFIC_FPS | 30 | FPS solicitado e limite do loop de captura |
 | SMARTTRAFFIC_DETECTION_INTERVAL | 0.3 | Pausa, em segundos, entre inferências |
 | SMARTTRAFFIC_STALE_AFTER | 5 | Validade máxima, em segundos, a partir da captura do quadro |
+| SMARTTRAFFIC_STOPPED_SECONDS | 2 | Tempo mínimo com o centro do carro quase imóvel para classificar espera |
 | SMARTTRAFFIC_CONFIDENCE | 0.35 | Confiança mínima configurada no YOLO |
-| SMARTTRAFFIC_ROI | 0,0,1,1 | Área de contagem: esquerda, topo, direita, base; valores entre 0 e 1 |
+| SMARTTRAFFIC_ROI | 0,0,1,1 | ROI legada da Via A; prefira as variaveis por via |
+| SMARTTRAFFIC_CAMERA_A_ROI / SMARTTRAFFIC_CAMERA_B_ROI | 0,0,1,1 | ROI independente por via: esquerda, topo, direita, base |
 | SMARTTRAFFIC_ARDUINO_PORT | COM5 | Porta serial opcional, a 9600 baud |
 
 A resolução e o FPS efetivos dependem do hardware. A frequência de detecção também depende do tempo da inferência.
@@ -57,8 +55,8 @@ No Windows, a aplicação usa DirectShow explicitamente. Na enumeração deste c
 
 Encerre a aplicação com Ctrl+C antes de testar outra configuração. No PowerShell:
 
-    $env:SMARTTRAFFIC_CAMERA_INDEX='1'
-    $env:SMARTTRAFFIC_CAMERA_BACKEND='DSHOW'
+    $env:SMARTTRAFFIC_CAMERA_A_INDEX='1'
+    $env:SMARTTRAFFIC_CAMERA_B_INDEX='0'
     python Teste_camera.py
 
 O terminal informa a abertura, a configuração e o recebimento do primeiro quadro. Se não chegar imagem, feche outros aplicativos que usam a webcam e confira as permissões de câmera para aplicativos da área de trabalho no Windows. É possível testar MSMF ou AUTO alterando a variável de backend e reiniciando.
@@ -101,6 +99,7 @@ O Python calcula os tempos; o Arduino executa as transições e impõe os limite
 | Verde da via observada | `min(25, 8 + 2 × mediana de carros)` segundos |
 | Filtro | Mediana das leituras distintas recebidas nos últimos 2 segundos |
 | Via sem câmera | 12 segundos de verde por ciclo |
+| Carro parado aguardando em uma via | O verde da outra via pode ser encerrado com duração 0; o Arduino executa amarelo e intervalo todo vermelho antes de abrir a via priorizada |
 | Câmera/modelo sem medição válida | 12 segundos de verde em ambas as vias |
 | Amarelo contínuo | 3 segundos |
 | Ambos vermelhos entre vias | 1 segundo |
@@ -109,6 +108,8 @@ O Python calcula os tempos; o Arduino executa as transições e impõe os limite
 | Estado/ACK serial sem atualização por 2 segundos | Python invalida os sinais e interrompe comandos |
 
 O plano é atualizado aproximadamente uma vez por segundo, sem reiniciar o relógio da fase. Zero carros válidos leva ao verde mínimo de 8 segundos; ausência de medição leva ao ciclo fixo. Leituras repetidas não entram novamente no filtro. A janela começa com as amostras disponíveis e é descartada em falhas. Após a câmera voltar, o controle retoma a adaptação com novas leituras.
+
+A primeira estimativa de espera acompanha os centros das caixas de carros de cada câmera, sem compartilhar rastros entre vias. Considera parado o veículo com deslocamento inferior a 1% da largura da imagem por `SMARTTRAFFIC_STOPPED_SECONDS`. Configure `SMARTTRAFFIC_CAMERA_A_ROI` e `SMARTTRAFFIC_CAMERA_B_ROI` para as respectivas zonas de espera. É uma heurística visual para demonstração, sujeita a vibração, oclusão, perspectiva e erros do detector. Quando apenas uma via apresenta demanda, o verde da outra pode ser encerrado sem tempo mínimo; amarelo (3 s) e ambos vermelhos (1 s) continuam obrigatórios. Se ambas tiverem demanda, o controlador mantém o plano adaptativo sem prioridade exclusiva. A regra só atua no modo automático.
 
 As vias alternam sempre. No automático, a via sem câmera volta a receber verde em até 33 segundos após o fim de seu verde (25 + duas transições de 4 segundos). A observada espera até 20 segundos (12 + 8). Não se trata de comparação de filas nem de contagem de veículos únicos.
 
@@ -141,7 +142,7 @@ Ao encerrar o Python, o Arduino energizado deixa de receber comandos e assume o 
 - templates/index.html: vídeo, contagens, disponibilidade e botões manuais.
 - tests/: testes com câmera, detector e serial simulados.
 
-Rotas locais: **/**, **/video_feed**, **/status**, **POST /semaforo/manual** (`{"via":"A"}`) e **POST /semaforo/modo** (`{"modo":"manual"}` ou `{"modo":"automatico"}`). Resposta HTTP positiva significa solicitação recebida pelo Python; confira o estado posterior da placa. A rota legada /video_feed/A ou /video_feed/B só funciona para a via observada. A outra retorna 404. Eventos Socket.IO de estado e comando manual continuam disponíveis para compatibilidade.
+Rotas locais: **/**, **/camera/A**, **/camera/B**, **/video_feed/A**, **/video_feed/B**, **/status**, **POST /semaforo/manual** e **POST /semaforo/modo**. Os dois streams e snapshots permanecem independentes; o estado serial pertence ao controlador compartilhado.
 
 Essas rotas pertencem ao Flask local na porta 5000. O envio à API NestJS é opcional e configurado por `ingestion.local.json`. Consulte [INGESTION.md](INGESTION.md) para configurar dispositivos, fila persistente, reenvios e validação. O estado da ingestão aparece na interface e em `/status`, sem expor a chave.
 
@@ -151,10 +152,10 @@ Essas rotas pertencem ao Flask local na porta 5000. O envio à API NestJS é opc
 
 Os testes não abrem webcams nem enviam comandos a hardware. Para validar fisicamente:
 
-1. Conecte somente uma webcam, confirme a via e o enquadramento.
+1. Conecte duas webcams, confirme que os indices A e B sao distintos e confira cada imagem em /camera/A e /camera/B.
 2. Compare carros/pessoas visíveis na região amarela com as contagens exibidas.
-3. Confira que a via sem câmera continua sem medição.
-4. Desconecte a webcam: vídeo antigo e contagens devem ficar indisponíveis; reconecte e confira recuperação.
+3. Confirme que contagens e estados de captura nao se misturam entre as vias.
+4. Desconecte uma camera de cada vez: a outra deve continuar capturando; a via desconectada deve ficar indisponivel ate reconectar.
 5. Carregue o firmware ST1, feche o Monitor Serial e inicie o Python. Confira alternância automática, amarelo e ambos vermelhos, sem verde simultâneo.
 6. Varie a quantidade de carros; confira os limites de 8–25 segundos da via observada e os 12 segundos da outra. Pessoas sozinhas não devem aumentar o verde.
 7. Desconecte a câmera e confira o ciclo fixo; reconecte e confira o retorno da adaptação.

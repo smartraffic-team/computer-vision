@@ -8,24 +8,25 @@ Copie `ingestion.example.json` para `ingestion.local.json`, preencha e habilite 
 
 - `api_url`: endereço base com `/api/v1`. HTTP somente em localhost; use HTTPS fora desta máquina.
 - `ingestion_key`: mesma chave do servidor NestJS; nunca colocar no frontend, mobile ou repositório.
-- `camera_id`: ID de uma câmera ativa cadastrada na API e associada à via observada. Não confundir o ID do banco com o índice OpenCV.
+- `camera_id`: ID da camera ativa associada a Via A. Nao confundir o ID do banco com o indice OpenCV.
+- `camera_b_id`: ID opcional da camera ativa associada a Via B. Deve ser diferente de `camera_id`; configure-o para exportar leituras e telemetria independentes da camera B.
 - `computer_id` e `arduino_id`: IDs opcionais dos dispositivos cadastrados, para telemetria.
 - `signal_a_id` e `signal_b_id`: IDs dos semáforos A/B. Configure os dois para enviar fases; omita ambos para enviar somente contagens/telemetria.
-- `reading_interval`: 5 segundos por padrão; mínimo de 2 segundos. `telemetry_interval`: 15 segundos por padrão; mínimo de 10.
+- `reading_interval`: 1,5 segundo por padrão; mínimo de 1,5 segundo. `telemetry_interval`: 15 segundos por padrão; mínimo de 10.
 - `timeout`: 3 segundos por requisição; `max_attempts`: 8 tentativas por evento; `max_queue`: 50 mil eventos.
 - `queue_path`: opcional, caminho do arquivo SQLite. Uma fila fica vinculada ao endereço da API; use outro arquivo ao trocar de ambiente.
 
-No ambiente local, após preparar o MySQL, a API e o administrador conforme `../api/README.md`, o utilitário `node scripts/setup-local-ingestion.cjs` (executado dentro de `api/`) cadastra dispositivos via HTTP e grava o arquivo local do Python. Ele lê `api/.env` e `api/.env.local-admin`, que deve conter `ADMIN_EMAIL`, `ADMIN_NAME` e `ADMIN_PASSWORD`. Não sobrescreve uma configuração existente. A via padrão é A; pode ser definida por `SMARTTRAFFIC_OBSERVED_ROAD` no processo.
+O utilitario `node scripts/setup-local-ingestion.cjs` (dentro de `api/`) cadastra as duas cameras A/B quando cria uma configuracao nova. Se `ingestion.local.json` ja existir, execute `node scripts/setup-local-ingestion.cjs --add-camera-b`; ele reutiliza/cria o dispositivo B e atualiza somente `camera_b_id`, preservando os demais campos locais.
 
 ## Dados enviados
 
 | Recurso | Conteúdo e frequência |
 |---|---|
-| `/leituras` | Uma nova leitura válida a cada 5 s, tipo QUADRO, UUID, câmera, via observada, horário UTC da captura, carros e pessoas |
+| `/leituras` | Uma leitura valida de cada camera configurada a cada 1,5 s, tipo QUADRO, UUID, camera, via, horario UTC da captura, carros e pessoas |
 | `/historico-fases` | Mudanças de cor/modo dos dois sinais, conforme estado recebido do Arduino |
-| `/telemetria` | Disponibilidade de câmera, computador e Arduino a cada 15 s |
+| `/telemetria` | Disponibilidade individual das cameras configuradas, computador e Arduino a cada 15 s |
 
-Não são enviados zeros artificiais para a via sem câmera. Não há soma entre quadros, fila estimada nem veículos únicos. Falha da câmera interrompe novas leituras, mas não elimina as leituras válidas já na fila. Telemetria não inventa CPU, temperatura ou FPS.
+Nao sao enviados zeros artificiais para uma camera/via sem medicao valida. A estimativa visual de carros parados e usada localmente no controle; nao e persistida como tamanho de fila nem como veiculos unicos.
 
 O horário da fase é o instante em que o coletor observou a mudança, com resolução de coleta de aproximadamente 200 ms, não uma medição elétrica nem o instante exato do LED. Perda do estado serial gera `DESCONHECIDA`, origem `SISTEMA`. O modo informado pela placa e a estratégia local distinguem manual, fixo e adaptativo. Sem resposta serial válida, não se registram cores como confirmadas pelo Arduino.
 

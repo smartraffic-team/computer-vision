@@ -23,11 +23,12 @@ class IngestionConfig:
     api_url: str = 'http://127.0.0.1:3000/api/v1'
     ingestion_key: str = field(default='', repr=False)
     camera_id: str = ''
+    camera_b_id: str = ''
     arduino_id: str = ''
     computer_id: str = ''
     signal_a_id: str = ''
     signal_b_id: str = ''
-    reading_interval: float = 5
+    reading_interval: float = 1.5
     telemetry_interval: float = 15
     timeout: float = 3
     max_attempts: int = 8
@@ -45,14 +46,16 @@ class IngestionConfig:
             raise ValueError('Use HTTPS para API fora da máquina local.')
         if len(self.ingestion_key) < 32 or not self.camera_id:
             raise ValueError('Configure chave de ingestão e ID da câmera cadastrada.')
-        for name in ('camera_id', 'arduino_id', 'computer_id', 'signal_a_id', 'signal_b_id'):
+        if self.camera_b_id and self.camera_b_id == self.camera_id:
+            raise ValueError('As câmeras A e B devem ter IDs diferentes.')
+        for name in ('camera_id', 'camera_b_id', 'arduino_id', 'computer_id', 'signal_a_id', 'signal_b_id'):
             value = getattr(self, name)
             if value and (not isinstance(value, str) or not value.isascii()
                           or not value.isdigit() or int(value) <= 0):
                 raise ValueError(f'{name} deve ser um ID positivo em texto.')
         if bool(self.signal_a_id) != bool(self.signal_b_id) or (self.signal_a_id and self.signal_a_id == self.signal_b_id):
             raise ValueError('Configure IDs distintos para os dois semáforos.')
-        if (self.reading_interval < 2 or self.telemetry_interval < 10
+        if (self.reading_interval < 1.5 or self.telemetry_interval < 10
                 or not 0 < self.timeout <= 10 or self.max_attempts < 1 or self.max_queue < 1):
             raise ValueError('Intervalos, timeout ou limites de fila inválidos.')
 
@@ -160,7 +163,8 @@ class IngestionClient:
         self._lock = threading.Lock()
         self._status = {'habilitada': config.enabled, 'pendentes': 0, 'pausados': 0,
                         'ultimo_envio': None, 'erro': None}
-        self._next_reading = self._next_telemetry = 0
+        self._next_reading = {'A': 0, 'B': 0}
+        self._next_telemetry = 0
         self._phase_keys = {}
 
     def status(self):
@@ -173,15 +177,22 @@ class IngestionClient:
 
     def sample(self, outbox, data, now, stamp):
         c = self.config
-        if now >= self._next_reading and data.get('medicao_valida') and data.get('registrado_em'):
-            payload = {'identificadorEvento': str(uuid4()), 'dispositivoId': c.camera_id,
-                       'via': data['via_observada'], 'registradoEm': datetime.fromisoformat(
-                           data['registrado_em'].replace('Z', '+00:00')).astimezone(timezone.utc).isoformat(timespec='milliseconds'),
-                       'tipoLeitura': 'QUADRO', 'origemLeitura': 'VISAO_COMPUTACIONAL',
-                       'carrosDetectados': data['carros'], 'pedestresDetectados': data['pedestres']}
-            outbox.enqueue('reading:' + c.camera_id, '/leituras', payload,
-                           ('reading:' + c.camera_id, payload['registradoEm']))
-            self._next_reading = now + c.reading_interval
+        lanes = data.get('vias')
+        if not isinstance(lanes, dict):
+            road = data.get('via_observada')
+            lanes = {road: data} if road in ('A', 'B') else {}
+        for road, device in (('A', c.camera_id), ('B', c.camera_b_id)):
+            lane = lanes.get(road, {})
+            if (device and now >= self._next_reading[road]
+                    and lane.get('medicao_valida') and lane.get('registrado_em')):
+                payload = {'identificadorEvento': str(uuid4()), 'dispositivoId': device,
+                           'via': road, 'registradoEm': datetime.fromisoformat(
+                               lane['registrado_em'].replace('Z', '+00:00')).astimezone(timezone.utc).isoformat(timespec='milliseconds'),
+                           'tipoLeitura': 'QUADRO', 'origemLeitura': 'VISAO_COMPUTACIONAL',
+                           'carrosDetectados': lane['carros'], 'pedestresDetectados': lane['pedestres']}
+                outbox.enqueue('reading:' + device, '/leituras', payload,
+                               ('reading:' + device, payload['registradoEm']))
+                self._next_reading[road] = now + c.reading_interval
         if c.signal_a_id:
             known = data.get('arduino_conectado') is True
             mode = ('MANUAL' if data.get('modo_arduino') == 'MANUAL' else
@@ -197,9 +208,13 @@ class IngestionClient:
                     outbox.enqueue('phase:' + signal, '/historico-fases', payload)
                     self._phase_keys[road] = key
         if now >= self._next_telemetry:
-            camera_status = ('ONLINE' if data.get('medicao_valida') else
-                             'ALERTA' if data.get('camera') == 'conectada' else 'OFFLINE')
-            for device, status in [(c.camera_id, camera_status), (c.computer_id, 'ONLINE'),
+            camera_statuses = []
+            for road, device in (('A', c.camera_id), ('B', c.camera_b_id)):
+                lane = lanes.get(road, {})
+                camera_status = ('ONLINE' if lane.get('medicao_valida') else
+                                 'ALERTA' if lane.get('camera') == 'conectada' else 'OFFLINE')
+                camera_statuses.append((device, camera_status))
+            for device, status in [*camera_statuses, (c.computer_id, 'ONLINE'),
                                    (c.arduino_id, 'ONLINE' if data.get('arduino_conectado') else 'OFFLINE')]:
                 if device:
                     outbox.enqueue('telemetry:' + device, '/telemetria',
@@ -238,7 +253,7 @@ class IngestionClient:
                         self.update_status(pendentes=counts.get('pending', 0), pausados=counts.get('paused', 0))
                 except (sqlite3.Error, RuntimeError):
                     self.update_status(erro='Falha na fila local; verifique espaço e permissões.')
-                self._stop.wait(0.2 if collecting else 1)
+                self._stop.wait(0.2)
         except Exception as exc:
             # Não inclui configurações, resposta HTTP ou segredos em logs/status.
             logging.warning('Ingestão indisponível (%s); confira configuração e fila local.', type(exc).__name__)

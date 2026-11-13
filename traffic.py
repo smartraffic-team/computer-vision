@@ -12,6 +12,7 @@ class TrafficController:
     MIN_GREEN = 8
     MAX_GREEN = 25
     FIXED_GREEN = 12
+    PRIORITY_GREEN = 0
     FILTER_WINDOW = 2
     SERIAL_TIMEOUT = 2
     PHASES = {'A_GREEN', 'A_YELLOW', 'B_GREEN', 'B_YELLOW', 'ALL_RED'}
@@ -39,6 +40,15 @@ class TrafficController:
         self._filtered = None
         self._strategy = 'ciclo_fixo'
         self._durations = (12, 12)
+        self._waiting_cars = 0
+        self._priority_a = False
+        self._priority_road = None
+        self._lane_samples = {'A': deque(), 'B': deque()}
+        self._lane_sample_ids = {'A': None, 'B': None}
+        self._lane_filtered = {'A': None, 'B': None}
+        self._lane_waiting = {'A': 0, 'B': 0}
+        self._lane_wait_seconds = {'A': 0.0, 'B': 0.0}
+        self._lane_demand = {'A': False, 'B': False}
         self._notice = None
 
     def connect(self):
@@ -53,6 +63,9 @@ class TrafficController:
                 and now - self._received_at <= self.SERIAL_TIMEOUT and not self.error)
 
     def _plan(self, measurement, now):
+        if isinstance(measurement.get('vias'), dict):
+            self._plan_dual(measurement['vias'], now)
+            return
         valid = (measurement.get('medicao_valida') is True
                  and measurement.get('via_observada') == self.observed_road
                  and type(measurement.get('carros')) is int and measurement['carros'] >= 0)
@@ -62,6 +75,9 @@ class TrafficController:
             self._filtered = None
             self._strategy = 'ciclo_fixo'
             self._durations = (self.FIXED_GREEN, self.FIXED_GREEN)
+            self._waiting_cars = 0
+            self._priority_a = False
+            self._priority_road = None
             return
         stamp = measurement.get('registrado_em')
         if stamp is not None and stamp != self._sample_id:
@@ -73,12 +89,111 @@ class TrafficController:
             self._filtered = None
             self._strategy = 'ciclo_fixo'
             self._durations = (self.FIXED_GREEN, self.FIXED_GREEN)
+            self._waiting_cars = 0
+            self._priority_a = False
+            self._priority_road = None
             return
         self._filtered = statistics.median(value for _, value in self._samples)
+        waiting_cars = measurement.get('veiculos_parados', 0)
+        self._waiting_cars = waiting_cars if type(waiting_cars) is int and waiting_cars > 0 else 0
+        self._priority_a = (self.mode == 'automatico' and self.observed_road == 'A'
+                            and self._waiting_cars > 0)
+        self._priority_road = 'A' if self._priority_a else None
         green = min(self.MAX_GREEN, self.MIN_GREEN + 2 * self._filtered)
-        self._durations = ((green, self.FIXED_GREEN) if self.observed_road == 'A'
+        green_b = self.PRIORITY_GREEN if self._priority_a else self.FIXED_GREEN
+        self._durations = ((green, green_b) if self.observed_road == 'A'
                            else (self.FIXED_GREEN, green))
-        self._strategy = 'adaptativo'
+        self._strategy = 'prioridade_via_a' if self._priority_a else 'adaptativo'
+
+    def _plan_dual(self, lanes, now):
+        valid_roads = set()
+        for road in ('A', 'B'):
+            measurement = lanes.get(road, {})
+            valid = (measurement.get('medicao_valida') is True
+                     and measurement.get('via_observada') == road
+                     and type(measurement.get('carros')) is int
+                     and measurement['carros'] >= 0)
+            if not valid:
+                self._lane_samples[road].clear()
+                self._lane_sample_ids[road] = None
+                self._lane_filtered[road] = None
+                self._lane_waiting[road] = 0
+                self._lane_wait_seconds[road] = 0.0
+                self._lane_demand[road] = False
+                continue
+            valid_roads.add(road)
+            stamp = measurement.get('registrado_em')
+            if stamp is not None and stamp != self._lane_sample_ids[road]:
+                self._lane_samples[road].append((now, measurement['carros']))
+                self._lane_sample_ids[road] = stamp
+            samples = self._lane_samples[road]
+            while samples and now - samples[0][0] > self.FILTER_WINDOW:
+                samples.popleft()
+            self._lane_filtered[road] = (
+                statistics.median(value for _, value in samples) if samples else None
+            )
+            stopped = measurement.get('veiculos_parados', 0)
+            self._lane_waiting[road] = stopped if type(stopped) is int and stopped > 0 else 0
+            wait_seconds = measurement.get('espera_mais_antiga_seg', 0.0)
+            self._lane_wait_seconds[road] = (
+                float(wait_seconds) if type(wait_seconds) in (int, float)
+                and wait_seconds >= 0 else 0.0
+            )
+            self._lane_demand[road] = self._lane_waiting[road] > 0
+
+        if not valid_roads:
+            self._filtered = None
+            self._waiting_cars = 0
+            self._priority_a = False
+            self._priority_road = None
+            self._strategy = 'ciclo_fixo'
+            self._durations = (self.FIXED_GREEN, self.FIXED_GREEN)
+            return
+
+        self._filtered = self._lane_filtered['A']
+        self._waiting_cars = sum(self._lane_waiting.values())
+        green_a = (min(self.MAX_GREEN, self.MIN_GREEN + 2 * self._lane_filtered['A'])
+                   if self._lane_filtered['A'] is not None else self.FIXED_GREEN)
+        green_b = (min(self.MAX_GREEN, self.MIN_GREEN + 2 * self._lane_filtered['B'])
+                   if self._lane_filtered['B'] is not None else self.FIXED_GREEN)
+
+        previous_priority = self._priority_road
+        self._priority_road = None
+        # Só decide prioridade quando há leitura válida das duas câmeras.
+        # Uma câmera indisponível não significa que sua via esteja vazia.
+        if self.mode == 'automatico' and valid_roads == {'A', 'B'}:
+            demand_a, demand_b = self._lane_demand['A'], self._lane_demand['B']
+            if demand_a and not demand_b:
+                self._priority_road = 'A'
+            elif demand_b and not demand_a:
+                self._priority_road = 'B'
+            elif demand_a and demand_b:
+                waiting_a, waiting_b = self._lane_waiting['A'], self._lane_waiting['B']
+                if waiting_a > waiting_b:
+                    self._priority_road = 'A'
+                elif waiting_b > waiting_a:
+                    self._priority_road = 'B'
+                else:
+                    age_a = self._lane_wait_seconds['A']
+                    age_b = self._lane_wait_seconds['B']
+                    if age_a > age_b:
+                        self._priority_road = 'A'
+                    elif age_b > age_a:
+                        self._priority_road = 'B'
+                    elif previous_priority in ('A', 'B'):
+                        # Mantém a decisão no empate exato para evitar oscilação.
+                        self._priority_road = previous_priority
+                    else:
+                        self._priority_road = 'A'
+
+        if self._priority_road == 'A':
+            green_b = self.PRIORITY_GREEN
+        elif self._priority_road == 'B':
+            green_a = self.PRIORITY_GREEN
+        self._priority_a = self._priority_road == 'A'
+        self._strategy = ('prioridade_via_' + self._priority_road.lower()
+                          if self._priority_road else 'adaptativo')
+        self._durations = (green_a, green_b)
 
     def receive(self, line, now):
         """STATE ST1 seq fase decorrido_ms duracao_ms modo; rejeita outros protocolos."""
@@ -96,9 +211,12 @@ class TrafficController:
         except ValueError:
             return
         phase, mode, target = parts[3], parts[6], parts[7]
+        zero_priority_phase = (duration == 0 and phase in ('A_GREEN', 'B_GREEN')
+                               and mode == 'AUTO' and target == phase[0])
         if (phase not in self.PHASES or mode not in ('AUTO', 'MANUAL', 'FALLBACK')
                 or target not in ('A', 'B') or seq < 0 or elapsed < 0
-                or not 0 < duration <= self.MAX_GREEN * 1000):
+                or (not zero_priority_phase and duration <= 0)
+                or duration > self.MAX_GREEN * 1000):
             return
         with self._lock:
             self._state = dict(seq=seq, phase=phase, elapsed=elapsed / 1000,
@@ -214,6 +332,13 @@ class TrafficController:
             return {
                 'modo': self.mode, 'modo_arduino': state['mode'] if state else None,
                 'estrategia': self._strategy, 'carros_filtrados': self._filtered,
+                'veiculos_parados': self._waiting_cars,
+                'prioridade_via_a': self._priority_a,
+                'prioridade_via': self._priority_road,
+                'carros_filtrados_por_via': dict(self._lane_filtered),
+                'veiculos_parados_por_via': dict(self._lane_waiting),
+                'espera_mais_antiga_por_via_seg': dict(self._lane_wait_seconds),
+                'demanda_por_via': dict(self._lane_demand),
                 'arduino_conectado': healthy, 'erro_controle': self.error,
                 'aviso_controle': self._notice,
                 'fase': phase, 'sinais': signals,
