@@ -96,26 +96,26 @@ O Python calcula os tempos; o Arduino executa as transições e impõe os limite
 
 | Regra inicial da maquete | Valor |
 |---|---|
-| Verde da via observada | `min(25, 8 + 2 × mediana de carros)` segundos |
+| Verde da via observada | `min(25, 20 + 2 × mediana de carros)` segundos |
 | Filtro | Mediana das leituras distintas recebidas nos últimos 2 segundos |
-| Via sem câmera | 12 segundos de verde por ciclo |
+| Via sem câmera | 20 segundos de verde por ciclo |
 | Carro parado aguardando em uma via | O verde da outra via pode ser encerrado com duração 0; o Arduino executa amarelo e intervalo todo vermelho antes de abrir a via priorizada |
-| Câmera/modelo sem medição válida | 12 segundos de verde em ambas as vias |
+| Câmera/modelo sem medição válida | 20 segundos de verde em ambas as vias |
 | Amarelo contínuo | 3 segundos |
 | Ambos vermelhos entre vias | 1 segundo |
 | Inicialização da placa | Ambos vermelhos por 1 segundo; depois ciclo fixo |
 | Sem comando válido do Python por 4 segundos | Arduino assume ciclo fixo local |
 | Estado/ACK serial sem atualização por 2 segundos | Python invalida os sinais e interrompe comandos |
 
-O plano é atualizado aproximadamente uma vez por segundo, sem reiniciar o relógio da fase. Zero carros válidos leva ao verde mínimo de 8 segundos; ausência de medição leva ao ciclo fixo. Leituras repetidas não entram novamente no filtro. A janela começa com as amostras disponíveis e é descartada em falhas. Após a câmera voltar, o controle retoma a adaptação com novas leituras.
+O plano é atualizado aproximadamente uma vez por segundo, sem reiniciar o relógio da fase. Zero carros válidos leva ao verde mínimo de 20 segundos; ausência de medição leva ao ciclo fixo de 20 segundos. Leituras repetidas não entram novamente no filtro. A janela começa com as amostras disponíveis e é descartada em falhas. Após a câmera voltar, o controle retoma a adaptação com novas leituras.
 
 A primeira estimativa de espera acompanha os centros das caixas de carros de cada câmera, sem compartilhar rastros entre vias. Considera parado o veículo com deslocamento inferior a 1% da largura da imagem por `SMARTTRAFFIC_STOPPED_SECONDS`. Configure `SMARTTRAFFIC_CAMERA_A_ROI` e `SMARTTRAFFIC_CAMERA_B_ROI` para as respectivas zonas de espera. É uma heurística visual para demonstração, sujeita a vibração, oclusão, perspectiva e erros do detector. Quando apenas uma via apresenta demanda, o verde da outra pode ser encerrado sem tempo mínimo; amarelo (3 s) e ambos vermelhos (1 s) continuam obrigatórios. Se ambas tiverem demanda, o controlador mantém o plano adaptativo sem prioridade exclusiva. A regra só atua no modo automático.
 
-As vias alternam sempre. No automático, a via sem câmera volta a receber verde em até 33 segundos após o fim de seu verde (25 + duas transições de 4 segundos). A observada espera até 20 segundos (12 + 8). Não se trata de comparação de filas nem de contagem de veículos únicos.
+Sem prioridade, as vias alternam sempre. Cada via volta a receber verde em até 33 segundos após o fim de seu verde (até 25 segundos na outra via + duas transições de 4 segundos). Com demanda prioritária, o verde da via cedente pode ser encerrado em 0 segundos, preservando amarelo e ambos vermelhos. Não se trata de comparação de filas nem de contagem de veículos únicos.
 
 ### Modo manual e estados
 
-Selecione **Manual** na interface e depois solicite A ou B. Uma troca aguarda pelo menos 8 segundos de verde atual, segue por amarelo e ambos vermelhos e só então libera a outra via. O manual também alterna automaticamente após no máximo 25 segundos. Pedidos não reiniciam esse prazo. Uma transição aceita não pode ser redirecionada. Ao mudar de modo durante uma transição, ela termina normalmente.
+Selecione **Manual** na interface e depois solicite A ou B. Uma troca aguarda pelo menos 20 segundos de verde atual, segue por amarelo e ambos vermelhos e só então libera a outra via. O manual também alterna automaticamente após no máximo 25 segundos. Pedidos não reiniciam esse prazo. Uma transição aceita não pode ser redirecionada. Ao mudar de modo durante uma transição, ela termina normalmente.
 
 A tela distingue modo solicitado, modo informado pela placa, comando aguardando confirmação e fase recebida. O tempo restante é uma estimativa baseada no último estado e pode mudar com o plano adaptativo. Não há sensores de confirmação elétrica dos LEDs. Sem estado recente, ambos os sinais ficam sem informação na tela.
 
@@ -157,7 +157,7 @@ Os testes não abrem webcams nem enviam comandos a hardware. Para validar fisica
 3. Confirme que contagens e estados de captura nao se misturam entre as vias.
 4. Desconecte uma camera de cada vez: a outra deve continuar capturando; a via desconectada deve ficar indisponivel ate reconectar.
 5. Carregue o firmware ST1, feche o Monitor Serial e inicie o Python. Confira alternância automática, amarelo e ambos vermelhos, sem verde simultâneo.
-6. Varie a quantidade de carros; confira os limites de 8–25 segundos da via observada e os 12 segundos da outra. Pessoas sozinhas não devem aumentar o verde.
+6. Varie a quantidade de carros; confira os limites de 20–25 segundos por via (a via sem leitura válida usa o padrão fixo de 20 segundos). Pessoas sozinhas não devem aumentar o verde.
 7. Desconecte a câmera e confira o ciclo fixo; reconecte e confira o retorno da adaptação.
 8. Selecione Manual, solicite A/B e confira verde mínimo, limite máximo e vídeo fluido nas transições.
 9. Encerre o Python com Ctrl+C mantendo a placa energizada: após 4 segundos sem comandos, confira FALLBACK/ciclo fixo. Reinicie e confira recuperação. Teste também perda da serial mantendo alimentação independente da placa.

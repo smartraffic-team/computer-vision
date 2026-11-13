@@ -133,7 +133,7 @@ class Outbox:
 
     def retry_paused(self):
         with self.db:
-            self.db.execute("UPDATE events SET state='pending',attempts=0,next_at=0,failure=NULL WHERE state='paused'")
+            self.db.execute("UPDATE events SET state='pending',attempts=0,next_at=0,failure=NULL")
 
     def close(self):
         self.db.close()

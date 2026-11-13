@@ -36,20 +36,20 @@ Ao parar o Python abruptamente, ele não consegue registrar eventos posteriores;
 
 - UUID e conteúdo da leitura permanecem iguais em todas as tentativas.
 - Atualize também a API desta entrega: fases deduplicam por semáforo/início e telemetria por dispositivo/horário, verificando o conteúdo. Reenvios não reabrem fases antigas nem revertem a saúde atual do dispositivo.
-- Timeout, 408, 425, 429 e erros 5xx têm novas tentativas com espera crescente de até 60 s. O remetente limita o envio total a aproximadamente uma requisição por segundo.
+- Timeout, 408, 425, 429 e erros 5xx têm novas tentativas com espera crescente de até 60 s. O remetente verifica a fila a cada 200 ms e envia até cinco eventos por segundo.
 - Após 8 tentativas, o evento é pausado. Erros permanentes, inclusive 400/401/403/409, pausam imediatamente. Um conflito 409 não é considerado sucesso.
 - Eventos posteriores do mesmo fluxo aguardam o anterior, preservando a ordem das fases. Outros fluxos podem continuar.
 - Fila cheia mantém eventos existentes e suspende novas amostras; transições ocorridas enquanto a coleta está suspensa não podem ser reconstruídas. Monitore a fila e o espaço em disco.
 - A interface Flask mostra quantidade pendente, pausada, erro e último envio. Segredos e respostas HTTP completas não aparecem nos logs nem no `/status`.
 
-Após corrigir a causa, no diretório `computer-vision`:
+Após corrigir a causa e reiniciar a API, no diretório `computer-vision`:
 
 ```powershell
 python ingestion.py status
 python ingestion.py retry
 ```
 
-`retry` libera todos os eventos pausados, mantendo payloads e IDs. Não apague a fila para tratar indisponibilidade temporária. Execute apenas uma instância da aplicação por câmera/fila.
+`retry` libera os eventos pausados e antecipa a próxima tentativa dos pendentes, mantendo payloads e IDs. Não apague a fila para tratar indisponibilidade temporária. Execute apenas uma instância da aplicação por câmera/fila.
 
 ## Execução e validação
 

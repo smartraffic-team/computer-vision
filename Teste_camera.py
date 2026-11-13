@@ -8,7 +8,7 @@ import time
 
 import cv2
 import numpy as np
-from flask import Flask, Response, render_template, request
+from flask import Flask, Response, jsonify, render_template, request
 from flask_socketio import SocketIO, emit
 
 from vision import CameraMonitor, VisionConfig
@@ -140,7 +140,10 @@ def video_feed(via=None):
 
 @app.route('/status')
 def status():
-    return status_payload()
+    response = jsonify(status_payload())
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Cache-Control'] = 'no-store'
+    return response
 
 
 @app.post('/semaforo/manual')

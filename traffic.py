@@ -9,9 +9,9 @@ import time
 
 class TrafficController:
     # Valores em segundos, compatíveis com os limites do firmware ST1.
-    MIN_GREEN = 8
+    MIN_GREEN = 20
     MAX_GREEN = 25
-    FIXED_GREEN = 12
+    FIXED_GREEN = 20
     PRIORITY_GREEN = 0
     FILTER_WINDOW = 2
     SERIAL_TIMEOUT = 2
@@ -39,7 +39,7 @@ class TrafficController:
         self._sample_id = None
         self._filtered = None
         self._strategy = 'ciclo_fixo'
-        self._durations = (12, 12)
+        self._durations = (self.FIXED_GREEN, self.FIXED_GREEN)
         self._waiting_cars = 0
         self._priority_a = False
         self._priority_road = None
