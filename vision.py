@@ -114,7 +114,7 @@ class YoloDetector:
                     car_boxes.append((left, top, right, bottom))
                 name = 'Carro' if label == 'car' else 'Pessoa'
                 color = (255, 160, 60) if label == 'car' else (80, 210, 80)
-                caption = f'{name} {float(box.conf[0]):.0%}'
+                caption = f'{name}'
                 visual_boxes.append((left, top, right, bottom, caption, color))
                 cv2.rectangle(annotated, (left, top), (right, bottom), color, 2)
                 (text_width, text_height), baseline = cv2.getTextSize(
@@ -236,10 +236,12 @@ class CameraMonitor:
             frame = self._frame.copy()
             overlay_max_age = min(
                 self.config.stale_after,
-                max(1.0, self.config.detection_interval * 3),
+                max(1.5, self.config.detection_interval * 5),
             )
-            if (self._model_status == 'pronto' and self._reading is not None
-                    and now - self._visual_boxes_time <= overlay_max_age):
+            # Mantém o último overlay por alguns frames mesmo quando a detecção
+            # falha temporariamente. Isso reduz o efeito de "piscar" sem esconder
+            # o estado real da leitura.
+            if self._visual_boxes and now - self._visual_boxes_time <= overlay_max_age:
                 visual_boxes = self._visual_boxes
             else:
                 visual_boxes = ()
@@ -291,8 +293,15 @@ class CameraMonitor:
                             self._visual_boxes_time = captured_at
                             self._model_status = 'pronto'
                 except Exception:
-                    logging.exception('Falha na detecção; contagem indisponível.')
+                    logging.exception('Falha na detecção; mantendo o último overlay por alguns quadros.')
                     with self._lock:
+                        # Mantém o último overlay visível por um breve intervalo,
+                        # mas continua marcando a contagem como indisponível.
+                        if self._visual_boxes and self._clock() - self._visual_boxes_time <= max(1.5, self.config.detection_interval * 5):
+                            self._reading = None
+                            self._annotated_frame = None
+                            self._model_status = 'erro'
+                            continue
                         self._reading = None
                         self._annotated_frame = None
                         self._visual_boxes = ()

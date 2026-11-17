@@ -55,7 +55,7 @@ python ingestion.py retry
 
 1. Inicie Docker Desktop e, em `database/`, execute `docker compose up -d --wait`.
 2. Em `api/`, execute `npm.cmd run start` (após instalar dependências, gerar Prisma e compilar).
-3. Em `computer-vision/`, execute `python Teste_camera.py`. Abra localhost:5000 e acompanhe o indicador da API.
+3. Em `computer-vision/`, execute `python smarttraffic_app.py`. Abra localhost:5000 e acompanhe o indicador da API.
 4. Com JWT de usuário, consulte `/api/v1/leituras?via=A` e confirme contagens e horário da câmera. A via não observada deve continuar sem leituras dessa câmera.
 5. Pare apenas a API: o vídeo e o controle devem continuar; a fila cresce. Reinicie a API e confira o escoamento. Se ultrapassar o limite de tentativas, use `retry`.
 6. Confira fases dos dois semáforos e telemetria via API. Testes automatizados de integração usam banco separado cujo nome contém `teste`; nunca inserem dados simulados no banco operacional.

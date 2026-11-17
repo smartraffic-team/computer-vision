@@ -1,17 +1,17 @@
 # SmartTraffic — visão computacional local
 
-Aplicacao de duas webcams isoladas, uma para cada via, com contagens e streams independentes. O programa principal e **Teste_camera.py**; Smartrafic_web.py inicia a mesma aplicacao.
+Aplicacao de duas webcams isoladas, uma para cada via, com contagens e streams independentes. O programa principal e **smarttraffic_app.py**; Smartrafic_web.py inicia a mesma aplicacao.
 
 ## Executar
 
 No terminal, dentro de computer-vision e no ambiente Python do projeto:
 
     python -m pip install -r requirements.txt
-    python Teste_camera.py
+    python smarttraffic_app.py
 
 Abra **http://localhost:5000**. Encerre com Ctrl+C.
 
-Os caminhos do modelo e do template são relativos aos arquivos Python, portanto também é possível iniciar de outra pasta: python computer-vision/Teste_camera.py.
+Os caminhos do modelo e do template são relativos aos arquivos Python, portanto também é possível iniciar de outra pasta: python computer-vision/smarttraffic_app.py.
 
 A aplicacao abre uma captura independente para cada via. Cada CameraMonitor possui seu proprio cv2.VideoCapture, thread de captura, estado, deteccao e reconexao. As duas cameras devem usar indices diferentes.
 
@@ -27,7 +27,7 @@ Exemplo no PowerShell (ajuste os indices se necessario):
     $env:SMARTTRAFFIC_CAMERA_A_INDEX='1'
     $env:SMARTTRAFFIC_CAMERA_B_INDEX='0'
     $env:SMARTTRAFFIC_ARDUINO_PORT='COM5'
-    python Teste_camera.py
+    python smarttraffic_app.py
 
 Para observar as duas vias em Flask, abra **/** (Via A) e use os links **Camera A / Camera B** para conferir cada captura. Os streams estao em **/video_feed/A** e **/video_feed/B**.
 
@@ -57,7 +57,7 @@ Encerre a aplicação com Ctrl+C antes de testar outra configuração. No PowerS
 
     $env:SMARTTRAFFIC_CAMERA_A_INDEX='1'
     $env:SMARTTRAFFIC_CAMERA_B_INDEX='0'
-    python Teste_camera.py
+    python smarttraffic_app.py
 
 O terminal informa a abertura, a configuração e o recebimento do primeiro quadro. Se não chegar imagem, feche outros aplicativos que usam a webcam e confira as permissões de câmera para aplicativos da área de trabalho no Windows. É possível testar MSMF ou AUTO alterando a variável de backend e reiniciando.
 
@@ -68,13 +68,13 @@ Uma chamada bloqueada no driver pode manter a captura em “iniciando”; a reco
 O padrão usa a imagem inteira. Para usar somente a região central:
 
     $env:SMARTTRAFFIC_ROI='0.2,0.1,0.8,0.9'
-    python Teste_camera.py
+    python smarttraffic_app.py
 
 O retângulo amarelo mostra a região enviada ao YOLO. O recorte não garante que um carro seja daquela via se o enquadramento também incluir outra via. Verifique a posição física e a área escolhida.
 
 ### Marcações no vídeo
 
-Cada pessoa detectada recebe uma caixa verde com o rótulo **Pessoa**; cada carro recebe uma caixa azul com o rótulo **Carro**. O percentual ao lado é a confiança atribuída pelo modelo à detecção. Apenas carros e pessoas da área de contagem são marcados.
+Cada pessoa detectada recebe uma caixa verde com o rótulo **Pessoa**; cada carro recebe uma caixa azul com o rótulo **Carro**. Apenas carros e pessoas da área de contagem são marcados.
 
 As caixas são desenhadas no mesmo quadro que gerou a medição, incluindo o deslocamento da região de contagem dentro da imagem. Por isso, o vídeo marcado atualiza na frequência da detecção, que pode ser menor que a captura da webcam. Enquanto o modelo carrega, falha ou produz uma leitura vencida, o vídeo mostra a captura recente sem caixas. Desconexões descartam as marcações anteriores.
 
@@ -135,7 +135,7 @@ Ao encerrar o Python, o Arduino energizado deixa de receber comandos e assume o 
 
 ## Estrutura
 
-- Teste_camera.py: configuração, Flask, status e comandos de modo/manual.
+- smarttraffic_app.py: configuração, Flask, status e comandos de modo/manual.
 - traffic.py: filtragem das contagens, planos de verde, protocolo serial e validade do estado.
 - vision.py: captura, reconexão, validade de medições e detecção YOLO.
 - Smartrafic_web.py: entrada compatível para a mesma aplicação.

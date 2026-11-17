@@ -12,7 +12,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from vision import CameraMonitor, DetectionResult, VisionConfig, YoloDetector, open_camera
-import Teste_camera as web
+import smarttraffic_app as web
 
 
 def wait_until(predicate, timeout=2):
@@ -231,7 +231,7 @@ class DetectorTests(unittest.TestCase):
         self.assertEqual((result.cars, result.people), (1, 1))
         boxes = [call.args[1:3] for call in rectangles.call_args_list if call.args[4] == 2]
         self.assertEqual(boxes, [((55, 35), (85, 65)), ((100, 30), (140, 70))])
-        self.assertEqual([call.args[1] for call in texts.call_args_list], ['Carro 91%', 'Pessoa 85%'])
+        self.assertEqual([call.args[1] for call in texts.call_args_list], ['Carro', 'Pessoa'])
         self.assertFalse(frame.any())
         self.assertTrue(result.annotated_frame.any())
         self.assertEqual(model.call_args.args[0].shape, (50, 100, 3))

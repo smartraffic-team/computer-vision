@@ -20,8 +20,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(me
 BASE_DIR = Path(__file__).resolve().parent
 PORTA_ARDUINO = os.getenv('SMARTTRAFFIC_ARDUINO_PORT', 'COM4')
 CAMERA_A_INDEX = int(os.getenv('SMARTTRAFFIC_CAMERA_A_INDEX',
-                               os.getenv('SMARTTRAFFIC_CAMERA_INDEX', '2')))
-CAMERA_B_INDEX = int(os.getenv('SMARTTRAFFIC_CAMERA_B_INDEX', '1'))
+                               os.getenv('SMARTTRAFFIC_CAMERA_INDEX', '1')))
+CAMERA_B_INDEX = int(os.getenv('SMARTTRAFFIC_CAMERA_B_INDEX', '2'))
 if CAMERA_A_INDEX == CAMERA_B_INDEX:
     raise ValueError('Configure índices diferentes para as câmeras A e B.')
 CAMERA_BACKEND = os.getenv(
